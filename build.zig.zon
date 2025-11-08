@@ -1,0 +1,12 @@
+.{
+    .name = .computer_enhanced,
+    .version = "0.0.0",
+    .fingerprint = 0x346d82038d437831,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
