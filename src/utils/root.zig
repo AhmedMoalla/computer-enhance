@@ -31,14 +31,15 @@ pub const FileReader = struct {
 
 pub fn openFileReaderAlloc(allocator: std.mem.Allocator, path: []const u8) !FileReader {
     const file = try std.fs.cwd().openFile(path, .{});
+    const file_path = try std.fs.cwd().realpathAlloc(allocator, path);
 
     const buffer = try allocator.alloc(u8, 1024);
     var file_reader = try allocator.create(std.fs.File.Reader);
     file_reader.* = file.reader(buffer);
     return FileReader{
         .file = file,
-        .file_path = path,
-        .file_name = std.fs.path.basename(path),
+        .file_path = file_path,
+        .file_name = std.fs.path.basename(file_path),
         .interface = &file_reader.interface,
         .buffer = buffer,
         .file_reader = file_reader,
@@ -62,19 +63,25 @@ pub const FileWriter = struct {
     }
 };
 
-pub fn createFileWriterAlloc(allocator: std.mem.Allocator, comptime path_fmt: []const u8, args: anytype) !FileWriter {
+pub fn createFileWriterInDirAlloc(allocator: std.mem.Allocator, dir: std.fs.Dir, comptime path_fmt: []const u8, args: anytype) !FileWriter {
     const path = try std.fmt.allocPrint(allocator, path_fmt, args);
-    const file = try std.fs.cwd().createFile(path, .{ .read = true });
+    defer allocator.free(path);
+    const file = try dir.createFile(path, .{ .read = true });
+    const file_path = try dir.realpathAlloc(allocator, path);
 
     const buffer = try allocator.alloc(u8, 1024);
     var file_writer = try allocator.create(std.fs.File.Writer);
     file_writer.* = file.writer(buffer);
     return FileWriter{
         .file = file,
-        .file_path = path,
-        .file_name = std.fs.path.basename(path),
+        .file_path = file_path,
+        .file_name = std.fs.path.basename(file_path),
         .interface = &file_writer.interface,
         .buffer = buffer,
         .file_writer = file_writer,
     };
+}
+
+pub fn createFileWriterAlloc(allocator: std.mem.Allocator, comptime path_fmt: []const u8, args: anytype) !FileWriter {
+    return createFileWriterInDirAlloc(allocator, std.fs.cwd(), path_fmt, args);
 }

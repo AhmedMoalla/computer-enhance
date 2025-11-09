@@ -11,10 +11,13 @@ test "disassemble input | nasm | compare nasm_out input" {
     const inputs = [_][]const u8{
         input_dir ++ "listing_0037_single_register_mov",
         input_dir ++ "listing_0038_many_register_mov",
+        input_dir ++ "listing_0039_more_movs",
     };
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
+
+    std.testing.log_level = .debug;
 
     for (inputs) |in_file_path| {
         errdefer {
@@ -23,26 +26,24 @@ test "disassemble input | nasm | compare nasm_out input" {
             std.testing.log_level = .warn;
         }
 
-        var in_reader = try utils.openFileReaderAlloc(allocator, in_file_path);
-        const in = in_reader.interface;
-
-        const out_writer = try utils.createFileWriterAlloc(
+        var in = try utils.openFileReaderAlloc(allocator, in_file_path);
+        const out = try utils.createFileWriterInDirAlloc(
             allocator,
+            tmp.dir,
             "{s}.asm",
             .{std.fs.path.basename(in_file_path)},
         );
-        const out = out_writer.interface;
 
         // Disassemble provided binary file
-        try disassembler.disassemble(in, out);
+        try disassembler.disassemble(in.interface, out.interface);
 
         // Assemble result with nasm
-        const nasm_out_content = try nasm(allocator, out_writer.file_path, tmp.dir);
+        const nasm_out_content = try nasm(allocator, out.file_path, tmp.dir);
 
         // Compare input with result
-        in_reader = try utils.openFileReaderAlloc(allocator, in_file_path);
-        const stat = try in_reader.file.stat();
-        const in_content = try in_reader.interface.readAlloc(allocator, stat.size);
+        in = try utils.openFileReaderAlloc(allocator, in_file_path);
+        const stat = try in.file.stat();
+        const in_content = try in.interface.readAlloc(allocator, stat.size);
 
         try std.testing.expectEqual(stat.size, nasm_out_content.len);
         try std.testing.expectEqualSlices(u8, in_content, nasm_out_content);
@@ -53,7 +54,7 @@ fn nasm(allocator: std.mem.Allocator, asm_file_path: []const u8, output_dir: std
     const asm_file_name = std.fs.path.basename(asm_file_path);
     const nasm_out_file_path = try std.fs.path.join(allocator, &[_][]const u8{
         try output_dir.realpathAlloc(allocator, "."),
-        asm_file_name,
+        std.fs.path.stem(asm_file_name),
     });
 
     var process = std.process.Child.init(&[_][]const u8{
