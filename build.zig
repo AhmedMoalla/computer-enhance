@@ -4,18 +4,27 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const utils_module = b.addModule("utils", .{
+        .root_source_file = b.path("src/utils/root.zig"),
+        .target = target,
+    });
+
     const src_path = try std.fs.cwd().realpathAlloc(b.allocator, "src");
     var src = try std.fs.openDirAbsolute(src_path, .{ .iterate = true });
 
     var it = src.iterateAssumeFirstIteration();
     while (try it.next()) |dir| {
+        if (std.mem.eql(u8, dir.name, "utils")) continue;
+
         const exe = b.addExecutable(.{
             .name = dir.name,
             .root_module = b.createModule(.{
                 .root_source_file = b.path(try std.fmt.allocPrint(b.allocator, "src/{s}/main.zig", .{dir.name})),
                 .target = target,
                 .optimize = optimize,
-                .imports = &.{},
+                .imports = &.{
+                    .{ .name = "utils", .module = utils_module },
+                },
             }),
         });
 
