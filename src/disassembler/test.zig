@@ -12,6 +12,7 @@ test "disassemble input | nasm | compare nasm_out input" {
         input_dir ++ "listing_0037_single_register_mov",
         input_dir ++ "listing_0038_many_register_mov",
         input_dir ++ "listing_0039_more_movs",
+        input_dir ++ "listing_0040_challenge_movs",
     };
 
     var tmp = std.testing.tmpDir(.{});
