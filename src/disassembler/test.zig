@@ -18,8 +18,6 @@ test "disassemble input | nasm | compare nasm_out input" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    std.testing.log_level = .debug;
-
     for (inputs) |in_file_path| {
         errdefer {
             std.testing.log_level = .debug;
