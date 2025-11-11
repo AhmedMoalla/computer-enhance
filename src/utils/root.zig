@@ -85,3 +85,19 @@ pub fn createFileWriterInDirAlloc(allocator: std.mem.Allocator, dir: std.fs.Dir,
 pub fn createFileWriterAlloc(allocator: std.mem.Allocator, comptime path_fmt: []const u8, args: anytype) !FileWriter {
     return createFileWriterInDirAlloc(allocator, std.fs.cwd(), path_fmt, args);
 }
+
+pub fn toUpperAlloc(allocator: std.mem.Allocator, ascii_string: []const u8) []u8 {
+    const output = allocator.alloc(u8, ascii_string.len) catch unreachable;
+    for (ascii_string, 0..) |c, i| {
+        output[i] = std.ascii.toUpper(c);
+    }
+    return output[0..ascii_string.len];
+}
+
+pub fn repeatCharAlloc(allocator: std.mem.Allocator, char: u8, n: usize) []u8 {
+    const output = allocator.alloc(u8, n) catch unreachable;
+    for (0..n) |i| {
+        output[i] = char;
+    }
+    return output[0..n];
+}

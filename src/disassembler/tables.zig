@@ -1,4 +1,5 @@
 const std = @import("std");
+const utils = @import("utils");
 const decoder = @import("decoder.zig");
 
 pub const Op = enum {
@@ -28,7 +29,59 @@ pub const ComponentLayout = struct {
 
 pub const TableEntry = struct {
     op: Op,
+    name: []const u8 = "",
     layout: []const ComponentLayout,
+
+    pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        var buffer: [1024]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(&buffer);
+        const allocator = fba.allocator();
+
+        try writer.print("\n", .{});
+
+        const layout = self.layout;
+        const width = blk: {
+            var acc: usize = layout.len + 1; // separators
+            for (layout) |component| {
+                acc += switch (component.type) { // text + spaces
+                    .bits => (component.size * 2) + 1,
+                    .d, .w => 3,
+                    .mod => 5,
+                    .reg, .rm => 7,
+                    .disp, .disp_w, .data, .data_w, .address, .address_w => 17,
+                };
+            }
+
+            break :blk acc;
+        };
+
+        // Top Border
+        try writer.print("┏", .{});
+        for (0..(width - 2)) |_| { // -2 is ┏ and ┓
+            try writer.print("━", .{});
+        }
+        try writer.print("┓\n", .{});
+
+        // =========== First Section ===========
+        const op_name = utils.toUpperAlloc(allocator, @tagName(self.op));
+        const name = self.name;
+        // -2: is for starting ┃ and ending ┃ and -2: is for ": " between op_name and title
+        const n_spaces: usize = width - op_name.len - name.len - 2 - 2;
+        const half_n_spaces = n_spaces / 2;
+        const left_spaces = utils.repeatCharAlloc(allocator, ' ', half_n_spaces + (n_spaces % 2) );
+        const right_spaces = utils.repeatCharAlloc(allocator, ' ', half_n_spaces);
+
+        try writer.print("┃", .{});
+        try writer.print("{s}{s}: {s}{s}", .{ left_spaces, op_name, name, right_spaces });
+        try writer.print("┃\n", .{});
+
+        // =========== First-Second Separator ===========
+        try writer.print("┣", .{});
+        for (0..(width - 2)) |_| { // -2 is ┏ and ┓
+            try writer.print("━", .{});
+        }
+         try writer.print("┫", .{});
+    }
 };
 
 pub const RegisterType = enum {
@@ -90,8 +143,17 @@ pub const registers: [8][2]Register = .{
 
 // TODO: Generate map at comptime which maps every combination to a layout based on this table
 pub const encodings = [_]TableEntry{
+    // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    // ┃                     MOV: Register/memory to/from register                     ┃
+    // ┣━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┫
+    // ┃<-------BYTE 1------>┃<-------BYTE 2------>┃<-----BYTE 3---->┃<-----BYTE 4---->┃
+    // ┃ 7 6 5 4 3 2   1   0 ┃ 7 6   5 4 3   2 1 0 ┃ 7 6 5 4 3 2 1 0 ┃ 7 6 5 4 3 2 1 0 ┃
+    // ┣━━━━━━━━━━━━━┯━━━┯━━━╋━━━━━┯━━━━━━━┯━━━━━━━╋━━━━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━━━━┫
+    // ┃ 1 0 0 0 1 0 ┊ d ┊ w ┃ mod ┊  reg  ┊  r/m  ┃     disp-lo     ┃     disp-hi     ┃
+    // ┗━━━━━━━━━━━━━┷━━━┷━━━┻━━━━━┷━━━━━━━┷━━━━━━━┻━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━┛
     .{
         .op = .mov,
+        .name = "Register/memory to/from register",
         .layout = &.{
             .{ .type = .bits, .size = 6, .value = 0b100010 },
             .{ .type = .d, .size = 1 },

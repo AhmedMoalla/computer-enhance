@@ -64,8 +64,9 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
                 if (in_bits == layout.value) break :layout_loop entry;
             }
         }
-    } else unreachable;
+    } else return error.InvalidInstruction;
 
+    log.debug("layout={f}", .{entry});
     log.debug("op={s}", .{@tagName(entry.op)});
 
     var bitCount: u8 = 0;
