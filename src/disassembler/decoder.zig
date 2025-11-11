@@ -1,11 +1,16 @@
 const std = @import("std");
 const log = std.log.scoped(.decode);
+const formatters = @import("formatters.zig");
 const t = @import("tables.zig");
 
 pub const Instruction = struct {
     op: t.Op,
     dst: Operand,
     src: Operand,
+
+    pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        try formatters.instruction(self, writer);
+    }
 };
 
 pub const Operand = union(enum) {
@@ -23,29 +28,7 @@ pub const Operand = union(enum) {
     invalid: void,
 
     pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
-        switch (self) {
-            .direct_address => |da| try writer.print("[{d}]", .{da}),
-            .effective_address_calculation => |eac| {
-                try writer.print("[{s}", .{eac.reg1.name});
-                if (eac.reg2) |reg2| {
-                    try writer.print(" + {s}", .{reg2.name});
-                }
-                if (eac.displacement > 0) {
-                    try writer.print(" + {}", .{@abs(eac.displacement)});
-                } else if (eac.displacement < 0) {
-                    try writer.print(" - {}", .{@abs(eac.displacement)});
-                }
-                try writer.print("]", .{});
-            },
-            .register => |reg| try writer.print("{s}", .{reg.name}),
-            .immediate => |imm| {
-                if (imm.wide) |wide| {
-                    try writer.print("{s} ", .{if (wide) "word" else "byte"});
-                }
-                try writer.print("{d}", .{imm.value});
-            },
-            .invalid => try writer.print("INVALID", .{}),
-        }
+        try formatters.operand(self, writer);
     }
 };
 
@@ -55,22 +38,22 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
     var byte = try in.takeByte();
     log.debug("byte={b:0>8}", .{byte});
 
-    const entry: t.TableEntry = layout_loop: for (t.encodings) |entry| {
-        for (entry.layout) |layout| {
+    const encoding: t.Encoding = layout_loop: for (t.encodings) |encoding| {
+        for (encoding.layout) |layout| {
             if (layout.type == .bits) {
                 // If bits are same then we found the layout
                 const shift: u3 = @intCast(8 - layout.size);
                 const in_bits = byte >> shift;
-                if (in_bits == layout.value) break :layout_loop entry;
+                if (in_bits == layout.value) break :layout_loop encoding;
             }
         }
     } else return error.InvalidInstruction;
 
-    log.debug("layout={f}", .{entry});
-    log.debug("op={s}", .{@tagName(entry.op)});
+    log.debug("layout={f}", .{encoding});
+    log.debug("op={s}", .{@tagName(encoding.op)});
 
     var bitCount: u8 = 0;
-    for (entry.layout) |layout| {
+    for (encoding.layout) |layout| {
         if (layout.type == .bits) {
             const position = bitCount;
             const shift: u3 = @intCast(8 - position - layout.size);
@@ -172,7 +155,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
         return error.InvalidInstruction;
     }
 
-    return Instruction{ .op = entry.op, .dst = dst, .src = src };
+    return Instruction{ .op = encoding.op, .dst = dst, .src = src };
 }
 
 fn displacement(comptime T: type, components: std.EnumMap(t.ComponentType, u16)) T {

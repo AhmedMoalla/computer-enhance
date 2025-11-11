@@ -94,10 +94,11 @@ pub fn toUpperAlloc(allocator: std.mem.Allocator, ascii_string: []const u8) []u8
     return output[0..ascii_string.len];
 }
 
-pub fn repeatCharAlloc(allocator: std.mem.Allocator, char: u8, n: usize) []u8 {
-    const output = allocator.alloc(u8, n) catch unreachable;
+pub fn repeatCharAlloc(allocator: std.mem.Allocator, char: []const u8, n: usize) []u8 {
+    const output = allocator.alloc(u8, char.len * n) catch unreachable;
     for (0..n) |i| {
-        output[i] = char;
+        const start = i * char.len;
+        @memcpy(output[start .. start + char.len], char);
     }
-    return output[0..n];
+    return output;
 }

@@ -3,9 +3,9 @@ const utils = @import("utils");
 const disassembler = @import("disassembler.zig");
 
 pub const std_options: std.Options = .{
-    .log_level = .debug,
+    .log_level = .info,
     .log_scope_levels = &[_]std.log.ScopeLevel{
-        .{ .scope = .disasm, .level = .info },
+        .{ .scope = .disasm, .level = .debug },
         .{ .scope = .decoder, .level = .debug },
     },
 };

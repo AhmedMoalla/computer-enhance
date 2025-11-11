@@ -10,7 +10,7 @@ pub fn disassemble(in: *std.Io.Reader, out: *std.Io.Writer) !void {
             else => return err,
         };
 
-        try print(out, "{s} {f}, {f}\n", .{ @tagName(instr.op), instr.dst, instr.src });
+        try print(out, "{f}\n", .{instr});
     }
     try out.flush();
 }
