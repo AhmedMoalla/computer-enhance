@@ -31,7 +31,12 @@ pub fn operand(self: decoder.Operand, writer: *std.Io.Writer) std.Io.Writer.Erro
             if (imm.wide) |wide| {
                 try writer.print("{s} ", .{if (wide) "word" else "byte"});
             }
-            try writer.print("{d}", .{imm.value});
+            if (imm.jump) {
+                const sign = if (imm.value >= 0) "+" else "-";
+                try writer.print("${s}{d}", .{ sign, @abs(imm.value) });
+            } else {
+                try writer.print("{d}", .{imm.value});
+            }
         },
         .invalid => try writer.print("INVALID", .{}),
     }

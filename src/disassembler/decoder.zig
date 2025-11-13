@@ -22,8 +22,9 @@ pub const Operand = union(enum) {
     },
     register: t.Register,
     immediate: struct {
-        value: u16,
+        value: i32,
         wide: ?bool = null,
+        jump: bool = false, // Necessary to format for nasm as $+imm or $-imm
     },
     invalid: void,
 
@@ -158,13 +159,13 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
     }
 
     if (components.get(.data)) |data| {
-        var imm = data;
+        var imm: i32 = @intCast(data);
         if (components.get(.data_w)) |data_w| {
             imm = (data_w << 8) | data;
         }
         if (components.get(.s) == 1) {
             const signed: i8 = @bitCast(@as(u8, @truncate(data)));
-            imm = @bitCast(@as(i16, signed));
+            imm = @intCast(signed);
         }
         if (mod_operand.* == .invalid) {
             mod_operand.* = .{ .immediate = .{ .value = imm } };
@@ -181,7 +182,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
     }
 
     if (components.get(.jump) == 1) {
-        lhs = .{ .immediate = .{ .value = components.get(.disp).? } };
+        lhs = .{ .immediate = .{ .value = displacement(i16, components), .jump = true } };
         return Instruction{ .op = encoding.op, .lhs = lhs };
     }
 
