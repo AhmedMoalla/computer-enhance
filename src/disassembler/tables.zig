@@ -4,6 +4,30 @@ const decoder = @import("decoder.zig");
 
 pub const Op = enum {
     mov,
+    add,
+    sub,
+    cmp,
+    jnz,
+    je,
+    jl,
+    jle,
+    jb,
+    jbe,
+    jp,
+    jo,
+    js,
+    jne,
+    jnl,
+    jg,
+    jnb,
+    ja,
+    jnp,
+    jno,
+    jns,
+    loop,
+    loopz,
+    loopnz,
+    jcxz,
 };
 
 pub const ComponentType = enum(usize) {
@@ -13,12 +37,16 @@ pub const ComponentType = enum(usize) {
     mod,
     reg,
     rm,
+    s,
     disp,
     disp_w,
     data,
     data_w,
     address,
     address_w,
+
+    // Flags
+    jump,
 };
 
 pub const EncodingComponent = struct {
@@ -106,25 +134,75 @@ pub const encodings = [_]Encoding{
         .{ "1010000", .w, .address, .address_w }, .{ .d = 1, .mod = 0, .reg = 0, .rm = 0b110 }),
     e(.mov, "Accumulator to memory", //
         .{ "1010001", .w, .address, .address_w }, .{ .d = 0, .mod = 0, .reg = 0, .rm = 0b110 }),
+
+    e(.add, "Reg/memory with register to either", //
+        .{ "000000", .d, .w, .mod, .reg, .rm, .disp, .disp_w }, .{}),
+    e(.add, "Immediate to register/memory", //
+        .{ "100000", .s, .w, .mod, "000", .rm, .disp, .disp_w, .data, .data_w }, .{ .d = 0 }),
+    e(.add, "Immediate to accumulator", //
+        .{ "0000010", .w, .data, .data_w }, .{ .d = 1, .reg = 0 }),
+
+    e(.sub, "Reg/memory with register to either", //
+        .{ "001010", .d, .w, .mod, .reg, .rm, .disp, .disp_w }, .{}),
+    e(.sub, "Immediate to register/memory", //
+        .{ "100000", .s, .w, .mod, "101", .rm, .disp, .disp_w, .data, .data_w }, .{ .d = 0 }),
+    e(.sub, "Immediate to accumulator", //
+        .{ "0010110", .w, .data, .data_w }, .{ .d = 1, .reg = 0 }),
+
+    e(.cmp, "Register/memory and register", //
+        .{ "001110", .d, .w, .mod, .reg, .rm, .disp, .disp_w }, .{}),
+    e(.cmp, "Immediate with register/memory", //
+        .{ "100000", .s, .w, .mod, "111", .rm, .disp, .disp_w, .data, .data_w }, .{ .d = 0 }),
+    e(.cmp, "Immediate with accumulator", //
+        .{ "0011110", .w, .data, .data_w }, .{ .d = 1, .reg = 0 }),
+
+    j(.je, "Jump on equal/zero (JZ)", "01110100"),
+    j(.jl, "Jump on less/not greater or equal (JNGE)", "01111100"),
+    j(.jle, "Jump on less or equal/not greater (JNG)", "01111110"),
+    j(.jb, "Jump on below/not above or equal (JNAE)", "01110010"),
+    j(.jbe, "Jump on below or equal/not above (JNA)", "01110110"),
+    j(.jp, "Jump on parity/parity even (JPE)", "01111010"),
+    j(.jo, "Jump on overflow", "01110000"),
+    j(.js, "Jump on sign", "01111000"),
+    j(.jne, "Jump on not equal/not zero (JNZ)", "01110101"),
+    j(.jnl, "Jump on not less/greater or equal (JGE)", "01111101"),
+    j(.jg, "Jump on not less or equal/greater (JNLE)", "01111111"),
+    j(.jnb, "Jump on not below/above or equal (JAE)", "01110011"),
+    j(.ja, "Jump on not below or equal/above (JNBE)", "01110111"),
+    j(.jnp, "Jump on not par/par odd (JPO)", "01111011"),
+    j(.jno, "Jump on not overflow", "01110001"),
+    j(.jns, "Jump on not sign", "01111001"),
+    j(.loop, "Loop CX times", "11100010"),
+    j(.loopz, "Loop while zero/equal (LOOPE)", "11100001"),
+    j(.loopnz, "Loop while not zero/equal (LOOPNE)", "11100000"),
+    j(.jcxz, "Jump on CX zero", "11100011"),
 };
+
+fn j(op: Op, comptime name: []const u8, comptime bits: []const u8) Encoding {
+    return e(op, name, .{ bits, .disp }, .{ .jump = 1 });
+}
 
 fn e(op: Op, comptime name: []const u8, layout: anytype, implicits: anytype) Encoding {
     return switch (@typeInfo(@TypeOf(layout))) {
-        .@"struct" => Encoding{ .op = op, .name = name, .layout = &(parseComponents(layout) ++ parseImplicits(implicits)) },
+        .@"struct" => Encoding{ .op = op, .name = name, .layout = &(parseImplicits(implicits) ++ parseComponents(layout)) },
         else => @compileError("expected 'layout' to be a tuple."),
     };
 }
 
 fn parseComponents(layout: anytype) [layout.len]EncodingComponent {
-    @setEvalBranchQuota(3000);
+    @setEvalBranchQuota(50000);
     var components: [layout.len]EncodingComponent = undefined;
     inline for (layout, 0..) |component, i| {
         components[i] = switch (@typeInfo(@TypeOf(component))) {
-            .pointer => |ptr| parseBits(ptr, component),
+            .pointer => EncodingComponent{
+                .type = .bits,
+                .size = component.len,
+                .value = std.fmt.parseInt(u8, component, 2) catch @compileError("could not parse bits: " ++ component),
+            },
             .enum_literal => EncodingComponent{
                 .type = component,
                 .size = switch (component) {
-                    .d, .w => 1,
+                    .d, .w, .s => 1,
                     .mod => 2,
                     .reg, .rm => 3,
                     .disp, .disp_w, .data, .data_w, .address, .address_w => 8,
@@ -152,20 +230,6 @@ fn parseImplicits(implicits: anytype) [structLen(implicits)]EncodingComponent {
         },
         else => @compileError("expected 'implicits' to be a struct literal"),
     }
-}
-
-fn parseBits(ptr: std.builtin.Type.Pointer, string_bits: anytype) EncodingComponent {
-    return switch (@typeInfo(ptr.child)) {
-        .array => |arr| if (arr.child == u8 and arr.sentinel_ptr != null)
-            EncodingComponent{
-                .type = .bits,
-                .size = string_bits.len,
-                .value = std.fmt.parseInt(u8, string_bits, 2) catch @compileError("could not parse bits: " ++ string_bits),
-            }
-        else
-            @compileError("expected pointer to be a string"),
-        else => @compileError("expected pointer to be a string"),
-    };
 }
 
 fn structLen(@"struct": anytype) usize {

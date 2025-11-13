@@ -4,7 +4,11 @@ const tables = @import("tables.zig");
 const decoder = @import("decoder.zig");
 
 pub fn instruction(self: decoder.Instruction, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    try writer.print("{s} {f}, {f}", .{ @tagName(self.op), self.dst, self.src });
+    if (self.rhs) |rhs| {
+        try writer.print("{s} {f}, {f}", .{ @tagName(self.op), self.lhs, rhs });
+    } else {
+        try writer.print("{s} {f}", .{ @tagName(self.op), self.lhs });
+    }
 }
 
 pub fn operand(self: decoder.Operand, writer: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -56,13 +60,7 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
                 n_implicit += 1;
                 continue;
             }
-            width_acc += switch (component.type) { // text + spaces
-                .bits => (component.size * 2) + 1,
-                .d, .w => 3,
-                .mod => 5,
-                .reg, .rm => 7,
-                .disp, .disp_w, .data, .data_w, .address, .address_w => 17,
-            };
+            width_acc += componentWidth(component);
             bit_size_acc += component.size;
         }
 
@@ -72,31 +70,6 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
 
     if (n_implicit > 0) {
         try writer.print("\n", .{});
-    }
-
-    // Determine byte width
-    var byte_widths: []usize = allocator.alloc(usize, n_bytes) catch unreachable;
-    @memset(byte_widths, 0);
-    {
-        var component_index: usize = 0;
-        for (0..n_bytes) |i| {
-            var remaining: usize = 8;
-            for (layout[component_index..]) |component| {
-                byte_widths[i] += switch (component.type) { // text + spaces
-                    .bits => (component.size * 2) + 1,
-                    .d, .w => 3,
-                    .mod => 5,
-                    .reg, .rm => 7,
-                    .disp, .disp_w, .data, .data_w, .address, .address_w => 17,
-                };
-                byte_widths[i] += 1; // One separator per component
-                component_index += 1;
-                remaining -= component.size;
-                if (remaining == 0) break;
-            }
-
-            byte_widths[i] -= 1; // Last component has no separator due to byte boundary
-        }
     }
 
     // =========== Top Border ===========
@@ -126,12 +99,20 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
     // =========== First-Second Separator ===========
     {
         try writer.print("┣", .{});
-        for (byte_widths, 0..) |w, i| {
-            for (0..w) |_| {
+        var remaining: usize = 8;
+        for (layout, 0..) |component, i| {
+            if (component.size == 0) continue;
+            remaining -= component.size;
+            for (0..componentWidth(component)) |_| {
                 try writer.print("━", .{});
             }
-            if (i < byte_widths.len - 1) {
-                try writer.print("┳", .{});
+            if (remaining == 0) {
+                remaining = 8;
+                if (i < layout.len - 1) {
+                    try writer.print("┳", .{});
+                }
+            } else {
+                try writer.print("━", .{});
             }
         }
         try writer.print("┫\n", .{});
@@ -139,6 +120,26 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
 
     // =========== Second Section Header ===========
     {
+        var byte_widths: []usize = allocator.alloc(usize, n_bytes) catch unreachable;
+        @memset(byte_widths, 0);
+        {
+            var component_index: usize = 0;
+            for (0..n_bytes) |i| {
+                var remaining: usize = 8;
+                for (layout[component_index..]) |component| {
+                    byte_widths[i] += componentWidth(component);
+                    if (component.size > 0) {
+                        byte_widths[i] += 1; // One separator per component
+                    }
+                    component_index += 1;
+                    remaining -= component.size;
+                    if (remaining == 0) break;
+                }
+
+                byte_widths[i] -= 1; // Last component has no separator due to byte boundary
+            }
+        }
+
         try writer.print("┃", .{});
         for (byte_widths, 0..) |w, i| {
             // -6: is for 'BYTE n' and -2: is for < and >
@@ -183,29 +184,20 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
         for (layout, 0..) |component, i| {
             if (component.size == 0) continue;
             remaining -= component.size;
-            const n_dashes = switch (component.type) { // text + spaces
-                .bits => (component.size * 2) + 1,
-                .d, .w => 3,
-                .mod => 5,
-                .reg, .rm => 7,
-                .disp, .disp_w, .data, .data_w, .address, .address_w => 17,
-            };
+            const n_dashes = componentWidth(component);
             for (0..n_dashes) |_| {
                 try writer.print("━", .{});
             }
-
             if (remaining == 0) {
                 remaining = 8;
-                if (i < layout.len - n_implicit - 1) {
+                if (i < layout.len - 1) {
                     try writer.print("╋", .{});
-                } else {
-                    try writer.print("┫", .{});
                 }
             } else {
                 try writer.print("┯", .{});
             }
         }
-        try writer.print("\n", .{});
+        try writer.print("┫\n", .{});
     }
 
     // =========== Third Section ===========
@@ -217,12 +209,13 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
             remaining -= component.size;
             switch (component.type) {
                 .bits => {
-                    for (0..component.size) |i| {
-                        const shift: u3 = @intCast(i);
+                    var j: u32 = component.size - 1;
+                    while (j < component.size) : (j -%= 1) {
+                        const shift: u3 = @intCast(j);
                         try writer.print(" {d}", .{(component.value >> shift) & 0b1});
                     }
                 },
-                .d, .w, .mod => try writer.print(" {s}", .{@tagName(component.type)}),
+                .d, .w, .s, .mod => try writer.print(" {s}", .{@tagName(component.type)}),
                 .reg => try writer.print("  {s} ", .{@tagName(component.type)}),
                 .rm => try writer.print("  r/m ", .{}),
                 .disp => try writer.print("     disp-lo    ", .{}),
@@ -231,6 +224,7 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
                 .data_w => try writer.print("   data if w=1  ", .{}),
                 .address => try writer.print("     addr-lo    ", .{}),
                 .address_w => try writer.print("     addr-hi    ", .{}),
+                .jump => {},
             }
 
             if (remaining == 0) {
@@ -250,27 +244,32 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
         for (layout, 0..) |component, i| {
             if (component.size == 0) continue;
             remaining -= component.size;
-            const n_dashes = switch (component.type) { // text + spaces
-                .bits => (component.size * 2) + 1,
-                .d, .w => 3,
-                .mod => 5,
-                .reg, .rm => 7,
-                .disp, .disp_w, .data, .data_w, .address, .address_w => 17,
-            };
+            const n_dashes = componentWidth(component);
             for (0..n_dashes) |_| {
                 try writer.print("━", .{});
             }
 
             if (remaining == 0) {
                 remaining = 8;
-                if (i < layout.len - n_implicit - 1) {
+                if (i < layout.len - 1) {
                     try writer.print("┻", .{});
-                } else {
-                    try writer.print("┛", .{});
                 }
             } else {
                 try writer.print("┷", .{});
             }
         }
+        try writer.print("┛", .{});
     }
+}
+
+fn componentWidth(component: tables.EncodingComponent) usize {
+    if (component.size == 0) return 0;
+    return switch (component.type) { // text + spaces
+        .bits => (component.size * 2) + 1,
+        .d, .w, .s => 3,
+        .mod => 5,
+        .reg, .rm => 7,
+        .disp, .disp_w, .data, .data_w, .address, .address_w => 17,
+        else => unreachable,
+    };
 }

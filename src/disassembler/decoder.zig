@@ -5,8 +5,8 @@ const t = @import("tables.zig");
 
 pub const Instruction = struct {
     op: t.Op,
-    dst: Operand,
-    src: Operand,
+    lhs: Operand,
+    rhs: ?Operand = null,
 
     pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try formatters.instruction(self, writer);
@@ -32,27 +32,50 @@ pub const Operand = union(enum) {
     }
 };
 
+// Takes first two bytes and tries to find if they match an encoding.
+// The matching encoding has its .bits layout component matching those in the the first two bytes.
+pub fn findEncoding(bytes: []u8) !t.Encoding {
+    std.debug.assert(bytes.len == 2);
+    log.debug("bytes={b:0>8} {b:0>8}\n", .{ bytes[0], bytes[1] });
+    const word: u16 = (@as(u16, bytes[0]) << 8) | bytes[1];
+    return layout_loop: for (t.encodings) |encoding| {
+        var valid = true;
+        var remaining_bit_size: u8 = @bitSizeOf(u16);
+        var remaining_bits = word;
+
+        for (encoding.layout) |component| {
+            if (component.size == 0) continue;
+
+            var shift: u4 = @intCast(remaining_bit_size - component.size);
+            const in_bits = remaining_bits >> shift;
+            remaining_bit_size -= component.size;
+
+            if (remaining_bit_size == 0) {
+                break;
+            }
+
+            shift = @intCast(16 - remaining_bit_size);
+            remaining_bits &= @as(u16, 0xFFFF) >> shift;
+
+            if (component.type == .bits and in_bits != component.value) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid) {
+            break :layout_loop encoding;
+        }
+    } else error.InvalidInstruction;
+}
+
 pub fn decode(in: *std.Io.Reader) !Instruction {
     var components: std.EnumMap(t.ComponentType, u16) = .init(.{});
 
-    var byte = try in.takeByte();
-    log.debug("byte={b:0>8}", .{byte});
-
-    const encoding: t.Encoding = layout_loop: for (t.encodings) |encoding| {
-        for (encoding.layout) |layout| {
-            if (layout.type == .bits) {
-                // If bits are same then we found the layout
-                const shift: u3 = @intCast(8 - layout.size);
-                const in_bits = byte >> shift;
-                if (in_bits == layout.value) break :layout_loop encoding;
-            }
-        }
-    } else return error.InvalidInstruction;
-
-    log.debug("layout={f}", .{encoding});
-    log.debug("op={s}", .{@tagName(encoding.op)});
+    const encoding: t.Encoding = try findEncoding(try in.peekArray(2));
+    log.debug("encoding={f}", .{encoding});
 
     var bitCount: u8 = 0;
+    var byte = try in.takeByte();
     for (encoding.layout) |layout| {
         if (layout.type == .bits) {
             const position = bitCount;
@@ -69,14 +92,17 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
             continue;
         }
 
-        if (layout.type == .data_w and components.get(.w) != 1) {
+        const data_sign_extended = components.get(.s) == 1;
+        const data_is_wide = components.get(.w) == 1 and !data_sign_extended;
+        if (layout.type == .data_w and !data_is_wide) {
             log.debug("skipping data_w", .{});
             continue;
         }
 
+        const is_jump = components.get(.jump) == 1;
         const mod = components.get(.mod);
         const direct_address: bool = mod == 0b00 and components.get(.rm) == 0b110;
-        if (layout.type == .disp and mod != 0b01 and mod != 0b10 and !direct_address) {
+        if (layout.type == .disp and mod != 0b01 and mod != 0b10 and !direct_address and !is_jump) {
             log.debug("skipping disp", .{});
             continue;
         }
@@ -101,14 +127,14 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
         bitCount += layout.size;
     }
 
-    const d = components.get(.d).?;
+    const d = components.get(.d);
     const w = components.get(.w);
 
-    var dst: Operand = .invalid;
-    var src: Operand = .invalid;
+    var lhs: Operand = .invalid;
+    var rhs: Operand = .invalid;
 
-    const reg_operand = if (d == 0) &src else &dst;
-    const mod_operand = if (d == 0) &dst else &src;
+    const reg_operand = if (d == 0) &rhs else &lhs;
+    const mod_operand = if (d == 0) &lhs else &rhs;
 
     if (components.get(.reg)) |reg| {
         reg_operand.* = .{ .register = t.registers[reg][w.?] };
@@ -136,6 +162,10 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
         if (components.get(.data_w)) |data_w| {
             imm = (data_w << 8) | data;
         }
+        if (components.get(.s) == 1) {
+            const signed: i8 = @bitCast(@as(u8, @truncate(data)));
+            imm = @bitCast(@as(i16, signed));
+        }
         if (mod_operand.* == .invalid) {
             mod_operand.* = .{ .immediate = .{ .value = imm } };
         } else {
@@ -150,12 +180,17 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
         }
     }
 
-    if (dst == .invalid or src == .invalid) {
-        log.debug("ERROR: dst = {f} | src = {f}", .{ dst, src });
+    if (components.get(.jump) == 1) {
+        lhs = .{ .immediate = .{ .value = components.get(.disp).? } };
+        return Instruction{ .op = encoding.op, .lhs = lhs };
+    }
+
+    if (lhs == .invalid or rhs == .invalid) {
+        log.debug("ERROR: lhs = {f} | rhs = {f}", .{ lhs, rhs });
         return error.InvalidInstruction;
     }
 
-    return Instruction{ .op = encoding.op, .dst = dst, .src = src };
+    return Instruction{ .op = encoding.op, .lhs = lhs, .rhs = rhs };
 }
 
 fn displacement(comptime T: type, components: std.EnumMap(t.ComponentType, u16)) T {
