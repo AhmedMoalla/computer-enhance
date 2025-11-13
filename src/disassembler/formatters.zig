@@ -72,24 +72,45 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
         try writer.print("\n", .{});
     }
 
+    const op_name = utils.toUpperAlloc(allocator, @tagName(self.op));
+    const name = self.name;
+    const title_width = op_name.len + name.len + 2; // +2: is for ": " between op_name and title
+    const title_padded_width = title_width + 2; // +2: is for padding (1 space before and after title)
+    const title_too_big = title_padded_width > width - 2; // -2: is for starting ┃ and ending ┃
+    var title_padding: usize = 0;
+    if (title_too_big) {
+        if (title_padded_width < width) {
+            title_padding = width - title_padded_width;
+        } else {
+            title_padding = (title_padded_width - width) + 2; // +2: is for starting ┃ and ending ┃
+        }
+    }
+
     // =========== Top Border ===========
     {
         try writer.print("┏", .{});
         for (0..(width - 2)) |_| { // -2 is ┏ and ┓
             try writer.print("━", .{});
         }
+        if (title_too_big) {
+            for (0..title_padding) |_| {
+                try writer.print("━", .{});
+            }
+        }
         try writer.print("┓\n", .{});
     }
 
     // =========== First Section ===========
     {
-        const op_name = utils.toUpperAlloc(allocator, @tagName(self.op));
-        const name = self.name;
-        // -2: is for starting ┃ and ending ┃ and -2: is for ": " between op_name and title
-        const n_spaces: usize = width - op_name.len - name.len - 2 - 2;
-        const half_n_spaces = n_spaces / 2;
-        const left_spaces = utils.repeatCharAlloc(allocator, " ", half_n_spaces + (n_spaces % 2));
-        const right_spaces = utils.repeatCharAlloc(allocator, " ", half_n_spaces);
+        var left_spaces: []const u8 = " ";
+        var right_spaces: []const u8 = " ";
+        if (!title_too_big) {
+            // -2: is for starting ┃ and ending ┃ and -2: is for ": " between op_name and title
+            const n_spaces: usize = width - op_name.len - name.len - 2 - 2;
+            const half_n_spaces = n_spaces / 2;
+            left_spaces = utils.repeatCharAlloc(allocator, " ", half_n_spaces + (n_spaces % 2));
+            right_spaces = utils.repeatCharAlloc(allocator, " ", half_n_spaces);
+        }
 
         try writer.print("┃", .{});
         try writer.print("{s}{s}: {s}{s}", .{ left_spaces, op_name, name, right_spaces });
@@ -115,7 +136,15 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
                 try writer.print("━", .{});
             }
         }
-        try writer.print("┫\n", .{});
+        if (title_too_big) {
+            try writer.print("┳", .{});
+            for (0..title_padding - 1) |_| {
+                try writer.print("┳", .{});
+            }
+            try writer.print("┫\n", .{});
+        } else {
+            try writer.print("┫\n", .{});
+        }
     }
 
     // =========== Second Section Header ===========
@@ -152,14 +181,23 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
                 try writer.print("┃", .{});
             }
         }
-        try writer.print("┃\n", .{});
+
+        if (title_too_big) {
+            try writer.print("┣", .{});
+            for (0..title_padding - 1) |_| {
+                try writer.print("╋", .{});
+            }
+            try writer.print("┫\n", .{});
+        } else {
+            try writer.print("┃\n", .{});
+        }
     }
 
     // =========== Second Section Indices ===========
     {
         var remaining: usize = 8;
         try writer.print("┃", .{});
-        for (layout) |component| {
+        for (layout, 0..) |component, i| {
             if (component.size == 0) continue;
             for (0..component.size) |_| {
                 remaining -= 1;
@@ -169,12 +207,23 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
 
             if (remaining == 0) {
                 remaining = 8;
-                try writer.print("┃", .{});
+                if (i < layout.len - 1) {
+                    try writer.print("┃", .{});
+                }
             } else {
                 try writer.print(" ", .{});
             }
         }
-        try writer.print("\n", .{});
+
+        if (title_too_big) {
+            try writer.print("┣", .{});
+            for (0..title_padding - 1) |_| {
+                try writer.print("╋", .{});
+            }
+            try writer.print("┫\n", .{});
+        } else {
+            try writer.print("┃\n", .{});
+        }
     }
 
     // =========== Second-Third Separator ===========
@@ -197,14 +246,23 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
                 try writer.print("┯", .{});
             }
         }
-        try writer.print("┫\n", .{});
+
+        if (title_too_big) {
+            try writer.print("╋", .{});
+            for (0..title_padding - 1) |_| {
+                try writer.print("╋", .{});
+            }
+            try writer.print("┫\n", .{});
+        } else {
+            try writer.print("┫\n", .{});
+        }
     }
 
     // =========== Third Section ===========
     {
         var remaining: usize = 8;
         try writer.print("┃", .{});
-        for (layout) |component| {
+        for (layout, 0..) |component, i| {
             if (component.size == 0) continue;
             remaining -= component.size;
             switch (component.type) {
@@ -229,12 +287,23 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
 
             if (remaining == 0) {
                 remaining = 8;
-                try writer.print(" ┃", .{});
+                if (i < layout.len - 1) {
+                    try writer.print(" ┃", .{});
+                }
             } else {
                 try writer.print(" ┊", .{});
             }
         }
-        try writer.print("\n", .{});
+
+        if (title_too_big) {
+            try writer.print(" ┣", .{});
+            for (0..title_padding - 1) |_| {
+                try writer.print("╋", .{});
+            }
+            try writer.print("┫\n", .{});
+        } else {
+            try writer.print(" ┃\n", .{});
+        }
     }
 
     // =========== Bottom Border ===========
@@ -258,7 +327,16 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
                 try writer.print("┷", .{});
             }
         }
-        try writer.print("┛", .{});
+
+        if (title_too_big) {
+            try writer.print("┻", .{});
+            for (0..title_padding - 1) |_| {
+                try writer.print("┻", .{});
+            }
+            try writer.print("┛", .{});
+        } else {
+            try writer.print("┛", .{});
+        }
     }
 }
 
