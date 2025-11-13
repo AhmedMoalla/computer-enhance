@@ -5,14 +5,18 @@ const decoder = @import("decoder.zig");
 
 pub fn instruction(self: decoder.Instruction, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     if (self.rhs) |rhs| {
-        try writer.print("{s} {f}, {f}", .{ @tagName(self.op), self.lhs, rhs });
+        try writer.print("{t} ", .{self.op});
+        try formatOperand(self, self.lhs, writer);
+        try writer.print(", ", .{});
+        try formatOperand(self, rhs, writer);
     } else {
-        try writer.print("{s} {f}", .{ @tagName(self.op), self.lhs });
+        try writer.print("{t} ", .{self.op});
+        try formatOperand(self, self.lhs, writer);
     }
 }
 
-pub fn operand(self: decoder.Operand, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    switch (self) {
+fn formatOperand(instr: decoder.Instruction, operand: decoder.Operand, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    switch (operand) {
         .direct_address => |da| try writer.print("[{d}]", .{da}),
         .effective_address_calculation => |eac| {
             try writer.print("[{s}", .{eac.reg1.name});
@@ -33,7 +37,8 @@ pub fn operand(self: decoder.Operand, writer: *std.Io.Writer) std.Io.Writer.Erro
             }
             if (imm.jump) {
                 const sign = if (imm.value >= 0) "+" else "-";
-                try writer.print("${s}{d}", .{ sign, @abs(imm.value) });
+                const size_i32: i32 = @intCast(instr.size);
+                try writer.print("${s}{d}", .{ sign, @abs(imm.value + size_i32) });
             } else {
                 try writer.print("{d}", .{imm.value});
             }

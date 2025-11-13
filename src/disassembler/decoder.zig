@@ -7,6 +7,7 @@ pub const Instruction = struct {
     op: t.Op,
     lhs: Operand,
     rhs: ?Operand = null,
+    size: usize,
 
     pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try formatters.instruction(self, writer);
@@ -27,10 +28,6 @@ pub const Operand = union(enum) {
         jump: bool = false, // Necessary to format for nasm as $+imm or $-imm
     },
     invalid: void,
-
-    pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
-        try formatters.operand(self, writer);
-    }
 };
 
 // Takes first two bytes and tries to find if they match an encoding.
@@ -75,6 +72,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
     const encoding: t.Encoding = try findEncoding(try in.peekArray(2));
     log.debug("encoding={f}", .{encoding});
 
+    var size: usize = 0;
     var bitCount: u8 = 0;
     var byte = try in.takeByte();
     for (encoding.layout) |layout| {
@@ -117,6 +115,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
             byte = try in.takeByte();
             log.debug("byte={b:0>8}", .{byte});
             bitCount = 0;
+            size += 1;
         }
 
         const position = bitCount;
@@ -127,6 +126,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
 
         bitCount += layout.size;
     }
+    size += 1; // last byte isn't counted in last loop
 
     const d = components.get(.d);
     const w = components.get(.w);
@@ -183,15 +183,15 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
 
     if (components.get(.jump) == 1) {
         lhs = .{ .immediate = .{ .value = displacement(i16, components), .jump = true } };
-        return Instruction{ .op = encoding.op, .lhs = lhs };
+        return Instruction{ .op = encoding.op, .lhs = lhs, .size = size };
     }
 
     if (lhs == .invalid or rhs == .invalid) {
-        log.debug("ERROR: lhs = {f} | rhs = {f}", .{ lhs, rhs });
+        log.debug("ERROR: lhs = {any} | rhs = {any}", .{ lhs, rhs });
         return error.InvalidInstruction;
     }
 
-    return Instruction{ .op = encoding.op, .lhs = lhs, .rhs = rhs };
+    return Instruction{ .op = encoding.op, .lhs = lhs, .rhs = rhs, .size = size };
 }
 
 fn displacement(comptime T: type, components: std.EnumMap(t.ComponentType, u16)) T {
