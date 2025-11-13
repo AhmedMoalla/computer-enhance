@@ -34,7 +34,7 @@ pub const Operand = union(enum) {
 // The matching encoding has its .bits layout component matching those in the the first two bytes.
 pub fn findEncoding(bytes: []u8) !t.Encoding {
     std.debug.assert(bytes.len == 2);
-    log.debug("bytes={b:0>8} {b:0>8}\n", .{ bytes[0], bytes[1] });
+    log.debug("bytes={b:0>8} {b:0>8} ({X:0>2} {X:0>2})", .{ bytes[0], bytes[1], bytes[0], bytes[1] });
     const word: u16 = (@as(u16, bytes[0]) << 8) | bytes[1];
     return layout_loop: for (t.encodings) |encoding| {
         var valid = true;
