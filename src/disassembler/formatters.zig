@@ -4,14 +4,21 @@ const tables = @import("tables.zig");
 const decoder = @import("decoder.zig");
 
 pub fn instruction(self: decoder.Instruction, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    if (self.prefix) |prefix| {
+        try writer.print("{t} ", .{prefix});
+    }
+    try writer.print("{t}", .{self.op});
+    if (self.prefix == .rep or self.prefix == .repne) {
+        const w = self.components.get(.w) == 1;
+        try writer.print("{s}", .{if (w) "w" else "b"});
+    }
+    if (self.lhs) |lhs| {
+        try writer.print(" ", .{});
+        try formatOperand(self, lhs, writer);
+    }
     if (self.rhs) |rhs| {
-        try writer.print("{t} ", .{self.op});
-        try formatOperand(self, self.lhs, writer);
         try writer.print(", ", .{});
         try formatOperand(self, rhs, writer);
-    } else {
-        try writer.print("{t} ", .{self.op});
-        try formatOperand(self, self.lhs, writer);
     }
 }
 
@@ -43,7 +50,6 @@ fn formatOperand(instr: decoder.Instruction, operand: decoder.Operand, writer: *
                 try writer.print("{d}", .{imm.value});
             }
         },
-        .invalid => try writer.print("INVALID", .{}),
     }
 }
 
@@ -283,7 +289,7 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
                         try writer.print(" {d}", .{(component.value >> shift) & 0b1});
                     }
                 },
-                .d, .w, .s, .mod => try writer.print(" {s}", .{@tagName(component.type)}),
+                .d, .w, .s, .v, .z, .mod, .seg => try writer.print(" {s}", .{@tagName(component.type)}),
                 .reg => try writer.print("  {s} ", .{@tagName(component.type)}),
                 .rm => try writer.print("  r/m ", .{}),
                 .disp => try writer.print("     disp-lo    ", .{}),
@@ -354,10 +360,10 @@ fn componentWidth(component: tables.EncodingComponent) usize {
     if (component.size == 0) return 0;
     return switch (component.type) { // text + spaces
         .bits => (component.size * 2) + 1,
-        .d, .w, .s => 3,
-        .mod => 5,
+        .d, .w, .s, .v, .z => 3,
+        .mod, .seg => 5,
         .reg, .rm => 7,
         .disp, .disp_w, .data, .data_w, .address, .address_w => 17,
-        else => unreachable,
+        .jump => 0,
     };
 }

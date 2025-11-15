@@ -3,11 +3,15 @@ const log = std.log.scoped(.decode);
 const formatters = @import("formatters.zig");
 const t = @import("tables.zig");
 
+const ComponentMap = std.EnumMap(t.ComponentType, u16);
+
 pub const Instruction = struct {
     op: t.Op,
-    lhs: Operand,
+    lhs: ?Operand = null,
     rhs: ?Operand = null,
     size: usize,
+    prefix: ?t.Op = null,
+    components: ComponentMap,
 
     pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try formatters.instruction(self, writer);
@@ -27,7 +31,6 @@ pub const Operand = union(enum) {
         wide: ?bool = null,
         jump: bool = false, // Necessary to format for nasm as $+imm or $-imm
     },
-    invalid: void,
 };
 
 // Takes first two bytes and tries to find if they match an encoding.
@@ -67,10 +70,31 @@ pub fn findEncoding(bytes: []u8) !t.Encoding {
 }
 
 pub fn decode(in: *std.Io.Reader) !Instruction {
-    var components: std.EnumMap(t.ComponentType, u16) = .init(.{});
+    var components: ComponentMap = .init(.{});
 
     const encoding: t.Encoding = try findEncoding(try in.peekArray(2));
     log.debug("encoding={f}", .{encoding});
+
+    const all_components_bits = for (encoding.layout) |component| {
+        if (component.type != .bits) break false;
+    } else true;
+    if (all_components_bits) {
+        in.toss(encoding.layout.len);
+        if (encoding.op == .rep or encoding.op == .repne) {
+            const instr = try decode(in);
+            return Instruction{
+                .op = instr.op,
+                .size = instr.size + encoding.layout.len,
+                .prefix = encoding.op,
+                .components = instr.components,
+            };
+        }
+        return Instruction{
+            .op = encoding.op,
+            .size = encoding.layout.len,
+            .components = components,
+        };
+    }
 
     var size: usize = 0;
     var bitCount: u8 = 0;
@@ -128,11 +152,11 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
     }
     size += 1; // last byte isn't counted in last loop
 
-    const d = components.get(.d);
+    const d = components.get(.d) orelse 0;
     const w = components.get(.w);
 
-    var lhs: Operand = .invalid;
-    var rhs: Operand = .invalid;
+    var lhs: ?Operand = null;
+    var rhs: ?Operand = null;
 
     const reg_operand = if (d == 0) &rhs else &lhs;
     const mod_operand = if (d == 0) &lhs else &rhs;
@@ -152,8 +176,8 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
                 };
             } else {
                 mod_operand.* = t.effective_address_calculations[rm];
-                mod_operand.*.effective_address_calculation.displacement = displacement(i16, components);
-                log.debug("disp={d}", .{mod_operand.*.effective_address_calculation.displacement});
+                mod_operand.*.?.effective_address_calculation.displacement = displacement(i16, components);
+                log.debug("disp={d}", .{mod_operand.*.?.effective_address_calculation.displacement});
             }
         }
     }
@@ -167,7 +191,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
             const signed: i8 = @bitCast(@as(u8, @truncate(data)));
             imm = @intCast(signed);
         }
-        if (mod_operand.* == .invalid) {
+        if (mod_operand.* == null) {
             mod_operand.* = .{ .immediate = .{ .value = imm } };
         } else {
             reg_operand.* = .{ .immediate = .{ .value = imm, .wide = w.? == 1 } };
@@ -181,17 +205,31 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
         }
     }
 
+    if (components.get(.seg)) |seg| {
+        reg_operand.* = .{ .register = t.segments[seg] };
+    }
+
     if (components.get(.jump) == 1) {
         lhs = .{ .immediate = .{ .value = displacement(i16, components), .jump = true } };
-        return Instruction{ .op = encoding.op, .lhs = lhs, .size = size };
+        rhs = null;
     }
 
-    if (lhs == .invalid or rhs == .invalid) {
-        log.debug("ERROR: lhs = {any} | rhs = {any}", .{ lhs, rhs });
-        return error.InvalidInstruction;
+    const v = components.get(.v);
+    if (v == 0) {
+        rhs = .{ .immediate = .{ .value = 1 } };
+    } else if (v == 1) {
+        rhs = .{ .register = t.CL };
     }
 
-    return Instruction{ .op = encoding.op, .lhs = lhs, .rhs = rhs, .size = size };
+    log.debug("lhs={any} | rhs={any}", .{ lhs, rhs });
+
+    return Instruction{
+        .op = encoding.op,
+        .lhs = lhs,
+        .rhs = rhs,
+        .size = size,
+        .components = components,
+    };
 }
 
 fn displacement(comptime T: type, components: std.EnumMap(t.ComponentType, u16)) T {
