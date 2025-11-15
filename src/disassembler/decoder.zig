@@ -42,7 +42,6 @@ pub const Operand = union(enum) {
     register: t.Register,
     immediate: struct {
         value: i32,
-        wide: ?bool = null,
         jump: bool = false, // Necessary to format for nasm as $+imm or $-imm
     },
 
@@ -70,8 +69,8 @@ pub const Operand = union(enum) {
         return .{ .register = value };
     }
 
-    pub fn imm(value: i32, wide: ?bool) Operand {
-        return .{ .immediate = .{ .value = value, .wide = wide } };
+    pub fn imm(value: i32) Operand {
+        return .{ .immediate = .{ .value = value } };
     }
 
     pub fn jmp(value: i32) Operand {
@@ -244,7 +243,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
             if (encoding.op == .jmp or encoding.op == .call) {
                 return Instruction{
                     .op = encoding.op,
-                    .lhs = .imm(displacement(u16, components), null),
+                    .lhs = .imm(displacement(u16, components)),
                     .size = size,
                     .segment_override = .inter((data_w << 8) | data),
                     .components = components,
@@ -255,11 +254,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
             const signed: i8 = @bitCast(@as(u8, @truncate(data)));
             imm = @intCast(signed);
         }
-        if (mod_operand.* == null) {
-            mod_operand.* = .imm(imm, null);
-        } else {
-            reg_operand.* = .imm(imm, w.? == 1);
-        }
+        reg_operand.* = .imm(imm);
         log.debug("imm={d}", .{imm});
     }
 
@@ -280,7 +275,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
 
     const v = components.get(.v);
     if (v == 0) {
-        rhs = .imm(1, null);
+        rhs = .imm(1);
     } else if (v == 1) {
         rhs = .reg(t.CL);
     }
@@ -300,7 +295,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
     }
 
     if (lhs == null and rhs == null and components.get(.disp_always) == 1) {
-        lhs = .imm(displacement(u16, components), null);
+        lhs = .imm(displacement(u16, components));
     }
 
     log.debug("lhs={any} | rhs={any}", .{ lhs, rhs });

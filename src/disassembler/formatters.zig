@@ -59,8 +59,8 @@ fn formatOperand(instr: decoder.Instruction, operand: decoder.Operand, writer: *
         },
         .register => |reg| try writer.print("{s}", .{reg.name}),
         .immediate => |imm| {
-            if (imm.wide) |wide| {
-                try writer.print("{s} ", .{if (wide) "word" else "byte"});
+            if (instr.components.get(.w)) |wide| {
+                try writer.print("{s} ", .{if (wide == 1) "word" else "byte"});
             }
             if (imm.jump) {
                 const size_i32: i32 = @intCast(instr.size);
