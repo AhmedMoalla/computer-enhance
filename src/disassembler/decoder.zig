@@ -11,6 +11,7 @@ pub const Instruction = struct {
     rhs: ?Operand = null,
     size: usize,
     prefix: ?t.Op = null,
+    segment_override: ?t.Register = null,
     components: ComponentMap,
 
     pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -31,6 +32,38 @@ pub const Operand = union(enum) {
         wide: ?bool = null,
         jump: bool = false, // Necessary to format for nasm as $+imm or $-imm
     },
+
+    pub fn directAddress(addr: u16) Operand {
+        return .{ .direct_address = addr };
+    }
+
+    pub fn eac(rm: u16, disp: i16) Operand {
+        const effective_address_calculations: [8]Operand = .{
+            .{ .effective_address_calculation = .{ .reg1 = t.BX, .reg2 = t.SI } },
+            .{ .effective_address_calculation = .{ .reg1 = t.BX, .reg2 = t.DI } },
+            .{ .effective_address_calculation = .{ .reg1 = t.BP, .reg2 = t.SI } },
+            .{ .effective_address_calculation = .{ .reg1 = t.BP, .reg2 = t.DI } },
+            .{ .effective_address_calculation = .{ .reg1 = t.SI } },
+            .{ .effective_address_calculation = .{ .reg1 = t.DI } },
+            .{ .effective_address_calculation = .{ .reg1 = t.BP } },
+            .{ .effective_address_calculation = .{ .reg1 = t.BX } },
+        };
+        var result = effective_address_calculations[rm];
+        result.effective_address_calculation.displacement = disp;
+        return result;
+    }
+
+    pub fn reg(value: t.Register) Operand {
+        return .{ .register = value };
+    }
+
+    pub fn imm(value: i32, wide: ?bool) Operand {
+        return .{ .immediate = .{ .value = value, .wide = wide } };
+    }
+
+    pub fn jmp(value: i32) Operand {
+        return .{ .immediate = .{ .value = value, .jump = true } };
+    }
 };
 
 // Takes first two bytes and tries to find if they match an encoding.
@@ -164,21 +197,18 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
     const mod_operand = if (d == 0) &lhs else &rhs;
 
     if (components.get(.reg)) |reg| {
-        reg_operand.* = .{ .register = t.registers[reg][w.?] };
+        reg_operand.* = .reg(t.registers[reg][w.?]);
     }
 
     if (components.get(.mod)) |mod| {
         const rm = components.get(.rm).?;
         if (mod == 0b11) { // Register Mode
-            mod_operand.* = .{ .register = t.registers[rm][w.?] };
+            mod_operand.* = .reg(t.registers[rm][w.?]);
         } else {
             if (mod == 0b00 and rm == 0b110) { // Direct Address
-                mod_operand.* = .{
-                    .direct_address = displacement(u16, components),
-                };
+                mod_operand.* = .directAddress(displacement(u16, components));
             } else {
-                mod_operand.* = t.effective_address_calculations[rm];
-                mod_operand.*.?.effective_address_calculation.displacement = displacement(i16, components);
+                mod_operand.* = .eac(rm, displacement(i16, components));
                 log.debug("disp={d}", .{mod_operand.*.?.effective_address_calculation.displacement});
             }
         }
@@ -194,33 +224,46 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
             imm = @intCast(signed);
         }
         if (mod_operand.* == null) {
-            mod_operand.* = .{ .immediate = .{ .value = imm } };
+            mod_operand.* = .imm(imm, null);
         } else {
-            reg_operand.* = .{ .immediate = .{ .value = imm, .wide = w.? == 1 } };
+            reg_operand.* = .imm(imm, w.? == 1);
         }
         log.debug("imm={d}", .{imm});
     }
 
     if (components.get(.address)) |address| {
         if (components.get(.address_w)) |address_w| {
-            mod_operand.* = .{ .direct_address = @bitCast((address_w << 8) | address) };
+            mod_operand.* = .directAddress(@bitCast((address_w << 8) | address));
         }
     }
 
     if (components.get(.seg)) |seg| {
-        reg_operand.* = .{ .register = t.segments[seg] };
+        reg_operand.* = .reg(t.segments[seg]);
     }
 
     if (components.get(.jump) == 1) {
-        lhs = .{ .immediate = .{ .value = displacement(i16, components), .jump = true } };
+        lhs = .jmp(displacement(i16, components));
         rhs = null;
     }
 
     const v = components.get(.v);
     if (v == 0) {
-        rhs = .{ .immediate = .{ .value = 1 } };
+        rhs = .imm(1, null);
     } else if (v == 1) {
-        rhs = .{ .register = t.CL };
+        rhs = .reg(t.CL);
+    }
+
+    if (encoding.op == .segment) {
+        const sreg = lhs.?;
+        const instr = try decode(in);
+        return Instruction{
+            .op = instr.op,
+            .lhs = instr.lhs,
+            .rhs = instr.rhs,
+            .size = instr.size + encoding.layout.len,
+            .segment_override = sreg.register,
+            .components = instr.components,
+        };
     }
 
     log.debug("lhs={any} | rhs={any}", .{ lhs, rhs });

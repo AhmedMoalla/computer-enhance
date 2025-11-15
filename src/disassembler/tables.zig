@@ -455,7 +455,7 @@ pub const encodings = [_]Encoding{
     e(.esc, "Escape (to external device)", //
         .{ "11011", .xxx, .mod, .yyy, .rm, .disp, .disp_w }, .{}),
     e(.lock, "Bus lock prefix", .{"11110000"}, .{}),
-    e(.segment, "Override prefix", .{ "001", .seg, "110" }, .{}),
+    e(.segment, "Override prefix", .{ "001", .seg, "110" }, .{ .d = 1 }),
 };
 
 fn j(op: Op, comptime name: []const u8, comptime bits: []const u8) Encoding {

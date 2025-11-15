@@ -14,11 +14,24 @@ pub fn instruction(self: decoder.Instruction, writer: *std.Io.Writer) std.Io.Wri
     }
     if (self.lhs) |lhs| {
         try writer.print(" ", .{});
+        try formatOperandSegment(self, lhs, writer);
         try formatOperand(self, lhs, writer);
     }
     if (self.rhs) |rhs| {
         try writer.print(", ", .{});
+        try formatOperandSegment(self, rhs, writer);
         try formatOperand(self, rhs, writer);
+    }
+}
+
+fn formatOperandSegment(instr: decoder.Instruction, operand: decoder.Operand, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    if (instr.segment_override) |seg| {
+        switch (operand) {
+            .effective_address_calculation, .direct_address => {
+                try writer.print("{t}:", .{seg.type});
+            },
+            else => {},
+        }
     }
 }
 
