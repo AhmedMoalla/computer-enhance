@@ -290,7 +290,7 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
                     }
                 },
                 .d, .w, .s, .v, .z, .mod, .seg => try writer.print(" {s}", .{@tagName(component.type)}),
-                .reg => try writer.print("  {s} ", .{@tagName(component.type)}),
+                .reg, .xxx, .yyy => try writer.print("  {s} ", .{@tagName(component.type)}),
                 .rm => try writer.print("  r/m ", .{}),
                 .disp => try writer.print("     disp-lo    ", .{}),
                 .disp_w => try writer.print("     disp-hi    ", .{}),
@@ -362,7 +362,7 @@ fn componentWidth(component: tables.EncodingComponent) usize {
         .bits => (component.size * 2) + 1,
         .d, .w, .s, .v, .z => 3,
         .mod, .seg => 5,
-        .reg, .rm => 7,
+        .reg, .rm, .xxx, .yyy => 7,
         .disp, .disp_w, .data, .data_w, .address, .address_w => 17,
         .jump => 0,
     };

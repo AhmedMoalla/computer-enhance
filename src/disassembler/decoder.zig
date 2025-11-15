@@ -80,10 +80,12 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
     } else true;
     if (all_components_bits) {
         in.toss(encoding.layout.len);
-        if (encoding.op == .rep or encoding.op == .repne) {
+        if (encoding.op == .rep or encoding.op == .repne or encoding.op == .lock) {
             const instr = try decode(in);
             return Instruction{
                 .op = instr.op,
+                .lhs = instr.lhs,
+                .rhs = instr.rhs,
                 .size = instr.size + encoding.layout.len,
                 .prefix = encoding.op,
                 .components = instr.components,

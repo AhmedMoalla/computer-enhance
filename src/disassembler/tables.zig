@@ -59,6 +59,7 @@ pub const Op = enum {
     call,
     jmp,
     ret,
+    retf,
     jnz,
     je,
     jl,
@@ -93,7 +94,9 @@ pub const Op = enum {
     sti,
     hlt,
     wait,
+    esc,
     lock,
+    segment,
 };
 
 pub const ComponentType = enum(usize) {
@@ -113,6 +116,9 @@ pub const ComponentType = enum(usize) {
     data_w,
     address,
     address_w,
+
+    xxx, // 3-bit data chunks
+    yyy, // 3-bit data chunks
 
     // Flags
     jump,
@@ -383,6 +389,33 @@ pub const encodings = [_]Encoding{
     e(.lods, "Load byte/word to AL/AX", .{ "1010110", .w }, .{}),
     e(.stos, "Store byte/word from AL/AX", .{ "1010101", .w }, .{}),
 
+    e(.call, "Direct within segment", //
+        .{ "11101000", .disp, .disp_w }, .{}),
+    e(.call, "Indirect within segment", //
+        .{ "11111111", .mod, "010", .rm, .disp, .disp_w }, .{ .w = 1 }),
+    e(.call, "Direct intersegment", //
+        .{ "10011010", .disp, .disp_w, .data, .data_w }, .{ .w = 1 }),
+    e(.call, "Indirect intersegment", //
+        .{ "11111111", .mod, "011", .rm, .disp, .disp_w }, .{ .w = 1 }),
+
+    e(.jmp, "Direct within segment", //
+        .{ "11101001", .disp, .disp_w }, .{}),
+    e(.jmp, "Direct within segment-short", //
+        .{ "11101011", .disp }, .{}),
+    e(.jmp, "Indirect within segment", //
+        .{ "11111111", .mod, "100", .rm, .disp, .disp_w }, .{ .w = 1 }),
+    e(.jmp, "Direct intersegment", //
+        .{ "11101010", .disp, .disp_w, .data, .data_w }, .{ .w = 1 }),
+    e(.jmp, "Indirect intersegment", //
+        .{ "11111111", .mod, "101", .rm, .disp, .disp_w }, .{ .w = 1 }),
+
+    e(.ret, "Within segment", .{"11000011"}, .{}),
+    e(.ret, "Within segment adding immediate to SP", //
+        .{ "11000010", .data, .data_w }, .{ .w = 1 }),
+    e(.retf, "Intersegment (RET)", .{"11001011"}, .{}),
+    e(.retf, "Intersegment adding immediate to SP (RET)", //
+        .{ "11001010", .data, .data_w }, .{ .w = 1 }),
+
     j(.je, "Jump on equal/zero (JZ)", "01110100"),
     j(.jl, "Jump on less/not greater or equal (JNGE)", "01111100"),
     j(.jle, "Jump on less or equal/not greater (JNG)", "01111110"),
@@ -403,6 +436,26 @@ pub const encodings = [_]Encoding{
     j(.loopz, "Loop while zero/equal (LOOPE)", "11100001"),
     j(.loopnz, "Loop while not zero/equal (LOOPNE)", "11100000"),
     j(.jcxz, "Jump on CX zero", "11100011"),
+
+    e(.int, "Type specified", .{ "11001101", .data }, .{}),
+    e(.int3, "Type 3", .{"11001100"}, .{}),
+
+    e(.into, "Interrupt on overflow", .{"11001110"}, .{}),
+    e(.iret, "Interrupt return", .{"11001111"}, .{}),
+
+    e(.clc, "Clear carry", .{"11111000"}, .{}),
+    e(.cmc, "Complement carry", .{"11110101"}, .{}),
+    e(.stc, "Set carry", .{"11111001"}, .{}),
+    e(.cld, "Clear direction", .{"11111100"}, .{}),
+    e(.std, "Set direction", .{"11111101"}, .{}),
+    e(.cli, "Clear interrupt", .{"11111010"}, .{}),
+    e(.sti, "Set interrupt", .{"11111011"}, .{}),
+    e(.hlt, "Halt", .{"11110100"}, .{}),
+    e(.wait, "Wait", .{"10011011"}, .{}),
+    e(.esc, "Escape (to external device)", //
+        .{ "11011", .xxx, .mod, .yyy, .rm, .disp, .disp_w }, .{}),
+    e(.lock, "Bus lock prefix", .{"11110000"}, .{}),
+    e(.segment, "Override prefix", .{ "001", .seg, "110" }, .{}),
 };
 
 fn j(op: Op, comptime name: []const u8, comptime bits: []const u8) Encoding {
@@ -417,7 +470,7 @@ fn e(op: Op, comptime name: []const u8, layout: anytype, implicits: anytype) Enc
 }
 
 fn parseComponents(layout: anytype) [layout.len]EncodingComponent {
-    @setEvalBranchQuota(50000);
+    @setEvalBranchQuota(65000);
     var components: [layout.len]EncodingComponent = undefined;
     inline for (layout, 0..) |component, i| {
         components[i] = switch (@typeInfo(@TypeOf(component))) {
@@ -431,7 +484,7 @@ fn parseComponents(layout: anytype) [layout.len]EncodingComponent {
                 .size = switch (component) {
                     .d, .w, .s, .v, .z => 1,
                     .mod, .seg => 2,
-                    .reg, .rm => 3,
+                    .reg, .rm, .xxx, .yyy => 3,
                     .disp, .disp_w, .data, .data_w, .address, .address_w => 8,
                     else => @compileError("unexpected component: " ++ component),
                 },
