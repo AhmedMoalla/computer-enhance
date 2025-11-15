@@ -70,7 +70,7 @@ fn nasm(allocator: std.mem.Allocator, asm_file_path: []const u8, output_dir: std
     }, allocator);
 
     const term = try process.spawnAndWait();
-    try std.testing.expectEqual(term.Exited, 0);
+    try std.testing.expectEqual(0, term.Exited);
 
     const file_reader = try utils.openFileReaderAlloc(allocator, nasm_out_file_path);
     const stat = try file_reader.file.stat();
