@@ -63,8 +63,8 @@ fn formatOperand(instr: decoder.Instruction, operand: decoder.Operand, writer: *
                 try writer.print("{s} ", .{if (wide) "word" else "byte"});
             }
             if (imm.jump) {
-                const sign = if (imm.value >= 0) "+" else "-";
                 const size_i32: i32 = @intCast(instr.size);
+                const sign = if (imm.value + size_i32 >= 0) "+" else "-";
                 try writer.print("${s}{d}", .{ sign, @abs(imm.value + size_i32) });
             } else {
                 try writer.print("{d}", .{imm.value});
