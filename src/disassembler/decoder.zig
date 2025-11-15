@@ -147,25 +147,25 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
     var size: usize = 1; // last byte isn't counted in last loop
     var bitCount: u8 = 0;
     var byte = try in.takeByte();
-    for (encoding.layout) |layout| {
-        if (layout.type == .bits) {
+    for (encoding.layout) |component| {
+        if (component.type == .bits) {
             const position = bitCount;
-            const shift: u3 = @intCast(8 - position - layout.size);
-            const mask: u16 = (@as(u16, 1) << @intCast(layout.size)) - 1;
-            std.debug.assert(((byte >> shift) & mask) == layout.value);
-            bitCount += layout.size;
+            const shift: u3 = @intCast(8 - position - component.size);
+            const mask: u16 = (@as(u16, 1) << @intCast(component.size)) - 1;
+            std.debug.assert(((byte >> shift) & mask) == component.value);
+            bitCount += component.size;
             continue;
         }
 
-        if (layout.size == 0) {
-            components.put(layout.type, layout.value);
-            log.debug("implicit {s} = {b}", .{ @tagName(layout.type), layout.value });
+        if (component.size == 0) {
+            components.put(component.type, component.value);
+            log.debug("implicit {s} = {b}", .{ @tagName(component.type), component.value });
             continue;
         }
 
         const data_sign_extended = components.get(.s) == 1;
         const data_is_wide = components.get(.w) == 1 and !data_sign_extended;
-        if (layout.type == .data_w and !data_is_wide) {
+        if (component.type == .data_w and !data_is_wide) {
             log.debug("skipping data_w", .{});
             continue;
         }
@@ -175,7 +175,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
         const direct_address: bool = mod == 0b00 and components.get(.rm) == 0b110;
         if (!has_disp) {
             const is_jump = components.get(.jump) == 1;
-            if (layout.type == .disp and mod != 0b01 and mod != 0b10 and !direct_address and !is_jump) {
+            if (component.type == .disp and mod != 0b01 and mod != 0b10 and !direct_address and !is_jump) {
                 log.debug("skipping disp", .{});
                 continue;
             }
@@ -183,7 +183,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
 
         const has_disp_w = components.get(.disp_always) == 1;
         if (!has_disp_w) {
-            if (layout.type == .disp_w and mod != 0b10 and !direct_address) {
+            if (component.type == .disp_w and mod != 0b10 and !direct_address) {
                 log.debug("skipping disp_w", .{});
                 continue;
             }
@@ -197,13 +197,13 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
         }
 
         const position = bitCount;
-        const shift: u3 = @intCast(8 - position - layout.size);
-        const mask: u16 = (@as(u16, 1) << @intCast(layout.size)) - 1;
-        components.put(layout.type, (byte >> shift) & mask);
-        const value = components.get(layout.type).?;
-        log.debug("pos={d} {s} = {b} ({X:0>2})", .{ position, @tagName(layout.type), value, value });
+        const shift: u3 = @intCast(8 - position - component.size);
+        const mask: u16 = (@as(u16, 1) << @intCast(component.size)) - 1;
+        components.put(component.type, (byte >> shift) & mask);
+        const value = components.get(component.type).?;
+        log.debug("pos={d} {s} = {b} ({X:0>2})", .{ position, @tagName(component.type), value, value });
 
-        bitCount += layout.size;
+        bitCount += component.size;
     }
 
     const d = components.get(.d) orelse 0;
@@ -222,7 +222,11 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
     if (components.get(.mod)) |mod| {
         const rm = components.get(.rm).?;
         if (mod == 0b11) { // Register Mode
-            mod_operand.* = .reg(t.registers[rm][w.?]);
+            if (components.contains(.rm_reg_always_wide)) {
+                mod_operand.* = .reg(t.registers[rm][1]);
+            } else {
+                mod_operand.* = .reg(t.registers[rm][w.?]);
+            }
         } else {
             if (mod == 0b00 and rm == 0b110) { // Direct Address
                 mod_operand.* = .directAddress(displacement(u16, components));
@@ -237,7 +241,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
         if (components.get(.data_w)) |data_w| {
             imm = (data_w << 8) | data;
 
-            if (encoding.op == .jmp) {
+            if (encoding.op == .jmp or encoding.op == .call) {
                 return Instruction{
                     .op = encoding.op,
                     .lhs = .imm(displacement(u16, components), null),
@@ -293,6 +297,10 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
             .segment_override = .reg(sreg.register),
             .components = instr.components,
         };
+    }
+
+    if (lhs == null and rhs == null and components.get(.disp_always) == 1) {
+        lhs = .imm(displacement(u16, components), null);
     }
 
     log.debug("lhs={any} | rhs={any}", .{ lhs, rhs });

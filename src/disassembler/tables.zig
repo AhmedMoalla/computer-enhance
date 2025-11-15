@@ -123,6 +123,7 @@ pub const ComponentType = enum(usize) {
     // Flags
     jump, // Flag the instruction as jump to be correctly formatted in nasm syntax
     disp_always, // Flag the instruction as always having displacement
+    rm_reg_always_wide, // Flag the register found by R/M as wide when mod = 0b11 (register mod)
 };
 
 pub const EncodingComponent = struct {
@@ -247,12 +248,12 @@ pub const encodings = [_]Encoding{
     e(.in, "Fixed port", //
         .{ "1110010", .w, .data }, .{ .d = 1, .reg = 0 }),
     e(.in, "Variable port", //
-        .{ "1110110", .w }, .{ .d = 1, .reg = 0, .mod = 0b11, .rm = 0b10 }),
+        .{ "1110110", .w }, .{ .d = 1, .reg = 0, .mod = 0b11, .rm = 0b10, .rm_reg_always_wide = 1 }),
 
     e(.out, "Fixed port", //
-        .{ "1110011", .w, .data }, .{ .d = 1, .reg = 0 }),
+        .{ "1110011", .w, .data }, .{ .d = 0, .reg = 0 }),
     e(.out, "Variable port", //
-        .{ "1110111", .w }, .{ .d = 1, .reg = 0, .mod = 0b11, .rm = 0b10 }),
+        .{ "1110111", .w }, .{ .d = 0, .reg = 0, .mod = 0b11, .rm = 0b10, .rm_reg_always_wide = 1 }),
 
     e(.xlat, "Translate byte to AL", .{"11010111"}, .{}),
     e(.lea, "Load EA to register", //
@@ -391,16 +392,16 @@ pub const encodings = [_]Encoding{
     e(.stos, "Store byte/word from AL/AX", .{ "1010101", .w }, .{}),
 
     e(.call, "Direct within segment", //
-        .{ "11101000", .disp, .disp_w }, .{}),
+        .{ "11101000", .disp, .disp_w }, .{ .disp_always = 1, .jump = 1 }),
     e(.call, "Indirect within segment", //
         .{ "11111111", .mod, "010", .rm, .disp, .disp_w }, .{ .w = 1 }),
     e(.call, "Direct intersegment", //
-        .{ "10011010", .disp, .disp_w, .data, .data_w }, .{ .w = 1 }),
+        .{ "10011010", .disp, .disp_w, .data, .data_w }, .{ .w = 1, .disp_always = 1 }),
     e(.call, "Indirect intersegment", //
         .{ "11111111", .mod, "011", .rm, .disp, .disp_w }, .{ .w = 1 }),
 
     e(.jmp, "Direct within segment", //
-        .{ "11101001", .disp, .disp_w }, .{}),
+        .{ "11101001", .disp, .disp_w }, .{ .disp_always = 1, .jump = 1 }),
     e(.jmp, "Direct within segment-short", //
         .{ "11101011", .disp }, .{}),
     e(.jmp, "Indirect within segment", //
@@ -471,7 +472,7 @@ fn e(op: Op, comptime name: []const u8, layout: anytype, implicits: anytype) Enc
 }
 
 fn parseComponents(layout: anytype) [layout.len]EncodingComponent {
-    @setEvalBranchQuota(65000);
+    @setEvalBranchQuota(70000);
     var components: [layout.len]EncodingComponent = undefined;
     inline for (layout, 0..) |component, i| {
         components[i] = switch (@typeInfo(@TypeOf(component))) {

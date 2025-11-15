@@ -14,6 +14,7 @@ test "disassemble input | nasm | compare nasm_out input" {
         input_dir ++ "listing_0039_more_movs.asm",
         input_dir ++ "listing_0040_challenge_movs.asm",
         input_dir ++ "listing_0041_add_sub_cmp_jnz.asm",
+        input_dir ++ "listing_0042_completionist_decode.asm",
     };
 
     var tmp = std.testing.tmpDir(.{});
