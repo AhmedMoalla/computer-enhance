@@ -27,8 +27,9 @@ pub fn instruction(self: decoder.Instruction, writer: *std.Io.Writer) std.Io.Wri
 fn formatOperandSegment(instr: decoder.Instruction, operand: decoder.Operand, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     if (instr.segment_override) |seg| {
         switch (operand) {
-            .effective_address_calculation, .direct_address => {
-                try writer.print("{t}:", .{seg.type});
+            .effective_address_calculation, .direct_address, .immediate => switch (seg) {
+                .register => |reg| try writer.print("{t}:", .{reg.type}),
+                .intersegment => |inter| try writer.print("{d}:", .{inter}),
             },
             else => {},
         }
@@ -311,7 +312,7 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
                 .data_w => try writer.print("   data if w=1  ", .{}),
                 .address => try writer.print("     addr-lo    ", .{}),
                 .address_w => try writer.print("     addr-hi    ", .{}),
-                .jump => {},
+                .jump, .disp_always => {},
             }
 
             if (remaining == 0) {
@@ -377,6 +378,6 @@ fn componentWidth(component: tables.EncodingComponent) usize {
         .mod, .seg => 5,
         .reg, .rm, .xxx, .yyy => 7,
         .disp, .disp_w, .data, .data_w, .address, .address_w => 17,
-        .jump => 0,
+        .jump, .disp_always => 0,
     };
 }

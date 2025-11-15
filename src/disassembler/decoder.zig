@@ -5,13 +5,26 @@ const t = @import("tables.zig");
 
 const ComponentMap = std.EnumMap(t.ComponentType, u16);
 
+pub const SegmentOverride = union(enum) {
+    register: t.Register,
+    intersegment: u16,
+
+    pub fn reg(value: t.Register) SegmentOverride {
+        return .{ .register = value };
+    }
+
+    pub fn inter(value: u16) SegmentOverride {
+        return .{ .intersegment = value };
+    }
+};
+
 pub const Instruction = struct {
     op: t.Op,
     lhs: ?Operand = null,
     rhs: ?Operand = null,
     size: usize,
     prefix: ?t.Op = null,
-    segment_override: ?t.Register = null,
+    segment_override: ?SegmentOverride = null,
     components: ComponentMap,
 
     pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -131,7 +144,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
         };
     }
 
-    var size: usize = 0;
+    var size: usize = 1; // last byte isn't counted in last loop
     var bitCount: u8 = 0;
     var byte = try in.takeByte();
     for (encoding.layout) |layout| {
@@ -157,22 +170,28 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
             continue;
         }
 
-        const is_jump = components.get(.jump) == 1;
+        const has_disp = components.contains(.disp_always);
         const mod = components.get(.mod);
         const direct_address: bool = mod == 0b00 and components.get(.rm) == 0b110;
-        if (layout.type == .disp and mod != 0b01 and mod != 0b10 and !direct_address and !is_jump) {
-            log.debug("skipping disp", .{});
-            continue;
+        if (!has_disp) {
+            const is_jump = components.get(.jump) == 1;
+            if (layout.type == .disp and mod != 0b01 and mod != 0b10 and !direct_address and !is_jump) {
+                log.debug("skipping disp", .{});
+                continue;
+            }
         }
 
-        if (layout.type == .disp_w and mod != 0b10 and !direct_address) {
-            log.debug("skipping disp_w", .{});
-            continue;
+        const has_disp_w = components.get(.disp_always) == 1;
+        if (!has_disp_w) {
+            if (layout.type == .disp_w and mod != 0b10 and !direct_address) {
+                log.debug("skipping disp_w", .{});
+                continue;
+            }
         }
 
         if (bitCount >= 8) {
             byte = try in.takeByte();
-            log.debug("byte={b:0>8}", .{byte});
+            log.debug("byte={b:0>8} ({X:0>2})", .{ byte, byte });
             bitCount = 0;
             size += 1;
         }
@@ -181,11 +200,11 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
         const shift: u3 = @intCast(8 - position - layout.size);
         const mask: u16 = (@as(u16, 1) << @intCast(layout.size)) - 1;
         components.put(layout.type, (byte >> shift) & mask);
-        log.debug("pos={d} {s} = {b}", .{ position, @tagName(layout.type), components.get(layout.type).? });
+        const value = components.get(layout.type).?;
+        log.debug("pos={d} {s} = {b} ({X:0>2})", .{ position, @tagName(layout.type), value, value });
 
         bitCount += layout.size;
     }
-    size += 1; // last byte isn't counted in last loop
 
     const d = components.get(.d) orelse 0;
     const w = components.get(.w);
@@ -209,7 +228,6 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
                 mod_operand.* = .directAddress(displacement(u16, components));
             } else {
                 mod_operand.* = .eac(rm, displacement(i16, components));
-                log.debug("disp={d}", .{mod_operand.*.?.effective_address_calculation.displacement});
             }
         }
     }
@@ -218,6 +236,16 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
         var imm: i32 = @intCast(data);
         if (components.get(.data_w)) |data_w| {
             imm = (data_w << 8) | data;
+
+            if (encoding.op == .jmp) {
+                return Instruction{
+                    .op = encoding.op,
+                    .lhs = .imm(displacement(u16, components), null),
+                    .size = size,
+                    .segment_override = .inter((data_w << 8) | data),
+                    .components = components,
+                };
+            }
         }
         if (components.get(.s) == 1) {
             const signed: i8 = @bitCast(@as(u8, @truncate(data)));
@@ -261,7 +289,8 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
             .lhs = instr.lhs,
             .rhs = instr.rhs,
             .size = instr.size + encoding.layout.len,
-            .segment_override = sreg.register,
+            .prefix = instr.prefix,
+            .segment_override = .reg(sreg.register),
             .components = instr.components,
         };
     }
@@ -278,18 +307,22 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
 }
 
 fn displacement(comptime T: type, components: std.EnumMap(t.ComponentType, u16)) T {
+    var result: T = 0;
     if (components.get(.disp)) |disp| {
         if (components.get(.disp_w)) |disp_w| { // 16-bit displacement
-            return @bitCast((disp_w << 8) | disp);
-        }
-        // 8-bit displacement
-        const disp_u8: u8 = @intCast(disp);
-        if (T == u16) {
-            return disp_u8;
+            result = @bitCast((disp_w << 8) | disp);
         } else {
-            const disp_i8: i8 = @bitCast(disp_u8);
-            return @as(T, disp_i8);
+            // 8-bit displacement
+            const disp_u8: u8 = @intCast(disp);
+            if (T == u16) {
+                result = disp_u8;
+            } else {
+                const disp_i8: i8 = @bitCast(disp_u8);
+                result = @as(T, disp_i8);
+            }
         }
     }
-    return 0; // No displacement
+
+    log.debug("disp={d}", .{result});
+    return result; // No displacement
 }

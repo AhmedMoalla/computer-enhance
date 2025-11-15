@@ -121,7 +121,8 @@ pub const ComponentType = enum(usize) {
     yyy, // 3-bit data chunks
 
     // Flags
-    jump,
+    jump, // Flag the instruction as jump to be correctly formatted in nasm syntax
+    disp_always, // Flag the instruction as always having displacement
 };
 
 pub const EncodingComponent = struct {
@@ -405,7 +406,7 @@ pub const encodings = [_]Encoding{
     e(.jmp, "Indirect within segment", //
         .{ "11111111", .mod, "100", .rm, .disp, .disp_w }, .{ .w = 1 }),
     e(.jmp, "Direct intersegment", //
-        .{ "11101010", .disp, .disp_w, .data, .data_w }, .{ .w = 1 }),
+        .{ "11101010", .disp, .disp_w, .data, .data_w }, .{ .w = 1, .disp_always = 1 }),
     e(.jmp, "Indirect intersegment", //
         .{ "11111111", .mod, "101", .rm, .disp, .disp_w }, .{ .w = 1 }),
 
