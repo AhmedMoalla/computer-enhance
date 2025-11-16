@@ -16,6 +16,6 @@ pub fn disassemble(in: *std.Io.Reader, out: *std.Io.Writer) !void {
 }
 
 fn print(out: *std.Io.Writer, comptime fmt: []const u8, args: anytype) !void {
-    log.debug("✅✅✅✅ " ++ fmt, args);
+    log.debug(fmt, args);
     try out.print(fmt, args);
 }

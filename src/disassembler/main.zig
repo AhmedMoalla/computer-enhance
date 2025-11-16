@@ -2,11 +2,13 @@ const std = @import("std");
 const utils = @import("utils");
 const disassembler = @import("disassembler.zig");
 
+const log = std.log;
+
 pub const std_options: std.Options = .{
-    .log_level = .debug,
+    .log_level = .info,
     .log_scope_levels = &[_]std.log.ScopeLevel{
-        .{ .scope = .disasm, .level = .debug },
-        .{ .scope = .decoder, .level = .debug },
+        .{ .scope = .disasm, .level = .info },
+        .{ .scope = .decoder, .level = .info },
     },
 };
 
@@ -15,8 +17,8 @@ pub fn main() !void {
     const allocator = arena.allocator();
 
     const args = try utils.readAllArgsAlloc(allocator);
-    if (args.len == 0) return error.FileNotFound;
-    const bin_file_path = args[0];
+    log.debug("{f}\n", .{args});
+    const bin_file_path = args.pos(0) orelse return error.FileNotFound;
 
     const in = try utils.openFileReaderAlloc(allocator, bin_file_path);
     const out = try utils.createFileWriterAlloc(

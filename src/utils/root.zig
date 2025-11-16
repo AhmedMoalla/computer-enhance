@@ -1,15 +1,76 @@
 const std = @import("std");
 
-pub fn readAllArgsAlloc(allocator: std.mem.Allocator) ![][]const u8 {
+pub const Args = struct {
+    items: [][]const u8,
+    positional: [][]const u8,
+    named: std.StringHashMap(?[]const u8),
+
+    pub fn pos(self: Args, index: usize) ?[]const u8 {
+        if (index >= self.positional.len) {
+            return null;
+        }
+        return self.positional[index];
+    }
+
+    pub fn get(self: Args, name: []const u8) ?[]const u8 {
+        return self.named.get(name);
+    }
+
+    pub fn has(self: Args, name: []const u8) bool {
+        return self.named.contains(name);
+    }
+
+    pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        if (self.items.len == 0) {
+            try writer.print("Args: none", .{});
+            return;
+        }
+
+        try writer.print("Args:\n", .{});
+        for (self.items, 0..) |item, i| {
+            try writer.print("  [{d}] {s}\n", .{ i, item });
+        }
+        try writer.print("Positional:\n", .{});
+        for (self.positional, 0..) |item, i| {
+            try writer.print("  [{d}] {s}\n", .{ i, item });
+        }
+
+        if (self.named.count() > 0) {
+            try writer.print("Named:\n", .{});
+            var it = self.named.keyIterator();
+            while (it.next()) |key| {
+                try writer.print("  [{s}] {s}", .{ key.*, self.named.get(key.*).? orelse "true" });
+            }
+        }
+    }
+};
+
+pub fn readAllArgsAlloc(allocator: std.mem.Allocator) !Args {
     var args_it = try std.process.argsWithAllocator(allocator);
     _ = args_it.skip(); // program name
 
     var args = try std.ArrayList([]const u8).initCapacity(allocator, 5);
+    var positional = try std.ArrayList([]const u8).initCapacity(allocator, 5);
+    var named = std.StringHashMap(?[]const u8).init(allocator);
     while (args_it.next()) |arg| {
-        const next_arg = try args.addOne(allocator);
-        next_arg.* = arg;
+        if (std.mem.startsWith(u8, arg, "-")) {
+            if (std.mem.indexOf(u8, arg, "=")) |equal_index| {
+                const value = arg[equal_index + 1 ..];
+                try named.put(arg[1..equal_index], if (value.len == 0) null else value);
+            } else {
+                try named.put(arg[1..], null);
+            }
+        } else {
+            try positional.append(allocator, arg);
+        }
+        try args.append(allocator, arg);
     }
-    return args.toOwnedSlice(allocator);
+
+    return Args{
+        .items = try args.toOwnedSlice(allocator),
+        .positional = try positional.toOwnedSlice(allocator),
+        .named = named,
+    };
 }
 
 pub const FileReader = struct {
