@@ -80,9 +80,14 @@ pub const Operand = union(enum) {
 
 // Takes first two bytes and tries to find if they match an encoding.
 // The matching encoding has its .bits layout component matching those in the the first two bytes.
-pub fn findEncoding(bytes: []u8) !t.Encoding {
+fn findEncoding(bytes: []u8, encodings1: std.AutoHashMap(u8, t.Encoding)) !t.Encoding {
     std.debug.assert(bytes.len == 2);
     log.debug("bytes={b:0>8} {b:0>8} ({X:0>2} {X:0>2})", .{ bytes[0], bytes[1], bytes[0], bytes[1] });
+
+    if (encodings1.get(bytes[0])) |encoding| {
+        return encoding;
+    }
+
     const word: u16 = (@as(u16, bytes[0]) << 8) | bytes[1];
     return layout_loop: for (t.encodings) |encoding| {
         var valid = true;
@@ -114,10 +119,10 @@ pub fn findEncoding(bytes: []u8) !t.Encoding {
     } else error.InvalidInstruction;
 }
 
-pub fn decode(in: *std.Io.Reader) !Instruction {
+pub fn decode(in: *std.Io.Reader, encodings1: std.AutoHashMap(u8, t.Encoding)) !Instruction {
     var components: ComponentMap = .init(.{});
 
-    const encoding: t.Encoding = try findEncoding(try in.peekArray(2));
+    const encoding: t.Encoding = try findEncoding(try in.peekArray(2), encodings1);
     log.debug("encoding={f}", .{encoding});
 
     const all_components_bits = for (encoding.layout) |component| {
@@ -126,7 +131,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
     if (all_components_bits) {
         in.toss(encoding.layout.len);
         if (encoding.op == .rep or encoding.op == .repne or encoding.op == .lock) {
-            const instr = try decode(in);
+            const instr = try decode(in, encodings1);
             return Instruction{
                 .op = instr.op,
                 .lhs = instr.lhs,
@@ -286,7 +291,7 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
 
     if (encoding.op == .segment) {
         const sreg = lhs.?;
-        const instr = try decode(in);
+        const instr = try decode(in, encodings1);
         return Instruction{
             .op = instr.op,
             .lhs = instr.lhs,
