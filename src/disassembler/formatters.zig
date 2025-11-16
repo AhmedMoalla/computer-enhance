@@ -12,6 +12,7 @@ pub fn instruction(self: decoder.Instruction, writer: *std.Io.Writer) std.Io.Wri
         const w = self.components.get(.w) == 1;
         try writer.print("{s}", .{if (w) "w" else "b"});
     }
+    try formatFarJumps(self, writer);
     if (self.lhs) |lhs| {
         try writer.print(" ", .{});
         try formatOperandSize(self, lhs, writer);
@@ -23,6 +24,19 @@ pub fn instruction(self: decoder.Instruction, writer: *std.Io.Writer) std.Io.Wri
         try formatOperandSize(self, rhs, writer);
         try formatOperandSegment(self, rhs, writer);
         try formatOperand(self, rhs, writer);
+    }
+}
+
+fn formatFarJumps(instr: decoder.Instruction, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    if (instr.lhs) |lhs| {
+        switch (lhs) {
+            .direct_address, .effective_address_calculation => {
+                if (instr.components.contains(.far)) {
+                    try writer.print(" far", .{});
+                }
+            },
+            else => {},
+        }
     }
 }
 
@@ -45,7 +59,7 @@ fn formatOperandSize(instr: decoder.Instruction, operand: decoder.Operand, write
 fn formatOperandSegment(instr: decoder.Instruction, operand: decoder.Operand, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     if (instr.segment_override) |seg| {
         switch (operand) {
-            .effective_address_calculation, .direct_address => switch (seg) {
+            .direct_address, .effective_address_calculation => switch (seg) {
                 .register => |reg| try writer.print("{t}:", .{reg.type}),
                 .intersegment => |inter| try writer.print("{d}:", .{inter}),
             },
@@ -333,7 +347,7 @@ pub fn encoding(self: tables.Encoding, writer: *std.Io.Writer) std.Io.Writer.Err
                 .data_w => try writer.print("   data if w=1  ", .{}),
                 .address => try writer.print("     addr-lo    ", .{}),
                 .address_w => try writer.print("     addr-hi    ", .{}),
-                .jump, .disp_always, .rm_reg_always_wide => {},
+                .jump, .disp_always, .rm_reg_always_wide, .far => {},
             }
 
             if (remaining == 0) {
@@ -399,6 +413,6 @@ fn componentWidth(component: tables.EncodingComponent) usize {
         .mod, .seg => 5,
         .reg, .rm, .xxx, .yyy => 7,
         .disp, .disp_w, .data, .data_w, .address, .address_w => 17,
-        .jump, .disp_always, .rm_reg_always_wide => 0,
+        .jump, .disp_always, .rm_reg_always_wide, .far => 0,
     };
 }

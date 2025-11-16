@@ -2,7 +2,7 @@ const std = @import("std");
 const utils = @import("utils");
 const disassembler = @import("disassembler.zig");
 
-test "disassemble input | nasm | compare nasm_out input" {
+test "nasm input.asm | disassemble input | nasm | compare nasm_out input" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -64,6 +64,7 @@ fn nasm(allocator: std.mem.Allocator, asm_file_path: []const u8, output_dir: std
 
     var process = std.process.Child.init(&[_][]const u8{
         "nasm",
+        "-w-prefix-lock-xchg",
         "-o",
         nasm_out_file_path,
         asm_file_path,

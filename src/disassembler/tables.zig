@@ -124,6 +124,7 @@ pub const ComponentType = enum(usize) {
     jump, // Flag the instruction as jump to be correctly formatted in nasm syntax
     disp_always, // Flag the instruction as always having displacement
     rm_reg_always_wide, // Flag the register found by R/M as wide when mod = 0b11 (register mod)
+    far, // Flag the instruction to add the far keyword
 };
 
 pub const EncodingComponent = struct {
@@ -396,9 +397,9 @@ pub const encodings = [_]Encoding{
     e(.call, "Indirect within segment", //
         .{ "11111111", .mod, "010", .rm, .disp, .disp_w }, .{ .w = 1 }),
     e(.call, "Direct intersegment", //
-        .{ "10011010", .disp, .disp_w, .data, .data_w }, .{ .w = 1, .disp_always = 1 }),
+        .{ "10011010", .disp, .disp_w, .data, .data_w }, .{ .w = 1, .disp_always = 1, .far = 1 }),
     e(.call, "Indirect intersegment", //
-        .{ "11111111", .mod, "011", .rm, .disp, .disp_w }, .{ .w = 1 }),
+        .{ "11111111", .mod, "011", .rm, .disp, .disp_w }, .{ .w = 1, .far = 1 }),
 
     e(.jmp, "Direct within segment", //
         .{ "11101001", .disp, .disp_w }, .{ .disp_always = 1, .jump = 1 }),
@@ -407,16 +408,16 @@ pub const encodings = [_]Encoding{
     e(.jmp, "Indirect within segment", //
         .{ "11111111", .mod, "100", .rm, .disp, .disp_w }, .{ .w = 1 }),
     e(.jmp, "Direct intersegment", //
-        .{ "11101010", .disp, .disp_w, .data, .data_w }, .{ .w = 1, .disp_always = 1 }),
+        .{ "11101010", .disp, .disp_w, .data, .data_w }, .{ .w = 1, .disp_always = 1, .far = 1 }),
     e(.jmp, "Indirect intersegment", //
-        .{ "11111111", .mod, "101", .rm, .disp, .disp_w }, .{ .w = 1 }),
+        .{ "11111111", .mod, "101", .rm, .disp, .disp_w }, .{ .w = 1, .far = 1 }),
 
     e(.ret, "Within segment", .{"11000011"}, .{}),
     e(.ret, "Within segment adding immediate to SP", //
         .{ "11000010", .data, .data_w }, .{ .w = 1 }),
-    e(.retf, "Intersegment (RET)", .{"11001011"}, .{}),
+    e(.retf, "Intersegment (RET)", .{"11001011"}, .{ .far = 1 }),
     e(.retf, "Intersegment adding immediate to SP (RET)", //
-        .{ "11001010", .data, .data_w }, .{ .w = 1 }),
+        .{ "11001010", .data, .data_w }, .{ .w = 1, .far = 1 }),
 
     j(.je, "Jump on equal/zero (JZ)", "01110100"),
     j(.jl, "Jump on less/not greater or equal (JNGE)", "01111100"),
@@ -472,7 +473,7 @@ fn e(op: Op, comptime name: []const u8, layout: anytype, implicits: anytype) Enc
 }
 
 fn parseComponents(layout: anytype) [layout.len]EncodingComponent {
-    @setEvalBranchQuota(4500);
+    @setEvalBranchQuota(5000);
     var components: [layout.len]EncodingComponent = undefined;
     inline for (layout, 0..) |component, i| {
         components[i] = switch (@typeInfo(@TypeOf(component))) {
