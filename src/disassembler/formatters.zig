@@ -14,13 +14,31 @@ pub fn instruction(self: decoder.Instruction, writer: *std.Io.Writer) std.Io.Wri
     }
     if (self.lhs) |lhs| {
         try writer.print(" ", .{});
+        try formatOperandSize(self, lhs, writer);
         try formatOperandSegment(self, lhs, writer);
         try formatOperand(self, lhs, writer);
     }
     if (self.rhs) |rhs| {
         try writer.print(", ", .{});
+        try formatOperandSize(self, rhs, writer);
         try formatOperandSegment(self, rhs, writer);
         try formatOperand(self, rhs, writer);
+    }
+}
+
+fn formatOperandSize(instr: decoder.Instruction, operand: decoder.Operand, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    switch (operand) {
+        .direct_address, .effective_address_calculation => {
+            switch (instr.lhs.?) {
+                .register => {},
+                else => {
+                    if (instr.components.get(.w)) |wide| {
+                        try writer.print("{s} ", .{if (wide == 1) "word" else "byte"});
+                    }
+                },
+            }
+        },
+        else => {},
     }
 }
 
@@ -59,9 +77,6 @@ fn formatOperand(instr: decoder.Instruction, operand: decoder.Operand, writer: *
         },
         .register => |reg| try writer.print("{s}", .{reg.name}),
         .immediate => |imm| {
-            if (instr.components.get(.w)) |wide| {
-                try writer.print("{s} ", .{if (wide == 1) "word" else "byte"});
-            }
             if (imm.jump) {
                 const size_i32: i32 = @intCast(instr.size);
                 const sign = if (imm.value + size_i32 >= 0) "+" else "-";
