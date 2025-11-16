@@ -472,14 +472,14 @@ fn e(op: Op, comptime name: []const u8, layout: anytype, implicits: anytype) Enc
 }
 
 fn parseComponents(layout: anytype) [layout.len]EncodingComponent {
-    @setEvalBranchQuota(70000);
+    @setEvalBranchQuota(4500);
     var components: [layout.len]EncodingComponent = undefined;
     inline for (layout, 0..) |component, i| {
         components[i] = switch (@typeInfo(@TypeOf(component))) {
             .pointer => EncodingComponent{
                 .type = .bits,
                 .size = component.len,
-                .value = std.fmt.parseInt(u8, component, 2) catch @compileError("could not parse bits: " ++ component),
+                .value = parseBits(component) orelse @compileError("could not parse bits: " ++ component),
             },
             .enum_literal => EncodingComponent{
                 .type = component,
@@ -503,7 +503,7 @@ fn parseImplicits(implicits: anytype) [structLen(implicits)]EncodingComponent {
             var components: [structLen(implicits)]EncodingComponent = undefined;
             inline for (s.fields, 0..) |field, i| {
                 components[i] = EncodingComponent{
-                    .type = std.meta.stringToEnum(ComponentType, field.name) orelse @compileError("could not parse component: " ++ field.name),
+                    .type = stringToEnum(ComponentType, field.name) orelse @compileError("could not parse component: " ++ field.name),
                     .size = 0,
                     .value = @field(implicits, field.name),
                 };
@@ -514,6 +514,34 @@ fn parseImplicits(implicits: anytype) [structLen(implicits)]EncodingComponent {
     }
 }
 
+// Using this instead of std.meta.stringToEnum reduces the evalBranchQuota from ~70k to ~30k
+// This is due to the implementation of std.meta.stringToEnum which builds a static map when
+// the number of enum members is less than 100 which explodes the quota budget
+fn stringToEnum(comptime T: type, str: []const u8) ?T {
+    inline for (@typeInfo(T).@"enum".fields) |enumField| {
+        if (std.mem.eql(u8, str, enumField.name)) {
+            return @field(T, enumField.name);
+        }
+    }
+    return null;
+}
+
 fn structLen(@"struct": anytype) usize {
     return @typeInfo(@TypeOf(@"struct")).@"struct".fields.len;
+}
+
+// Using this instead of std.fmt.parseInt reduces the evalBranchQuota from ~30k down to ~4.5k
+// This is because std.fmt.parseInt handle all the possible cases for parsing an int which
+// we don't need as we only provide binary strings of size 8 at most.
+fn parseBits(comptime bits: []const u8) ?u8 {
+    if (bits.len > 8) return null;
+    var result: u8 = 0;
+    for (bits) |bit| {
+        const bit_value = switch (bit) {
+            '0'...'1' => bit - '0',
+            else => return null,
+        };
+        result = (result << 1) | bit_value;
+    }
+    return result;
 }
