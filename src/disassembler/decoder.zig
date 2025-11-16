@@ -254,7 +254,11 @@ pub fn decode(in: *std.Io.Reader) !Instruction {
             const signed: i8 = @bitCast(@as(u8, @truncate(data)));
             imm = @intCast(signed);
         }
-        reg_operand.* = .imm(imm);
+        if (mod_operand.* == null) {
+            mod_operand.* = .imm(imm);
+        } else {
+            reg_operand.* = .imm(imm);
+        }
         log.debug("imm={d}", .{imm});
     }
 
