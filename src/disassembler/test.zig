@@ -8,19 +8,22 @@ test "nasm input.asm | disassemble input | nasm | compare nasm_out input" {
     const allocator = arena.allocator();
 
     const input_dir = "computer_enhance/perfaware/part1/";
-    const asm_inputs = [_][]const u8{
-        input_dir ++ "listing_0037_single_register_mov.asm",
-        input_dir ++ "listing_0038_many_register_mov.asm",
-        input_dir ++ "listing_0039_more_movs.asm",
-        input_dir ++ "listing_0040_challenge_movs.asm",
-        input_dir ++ "listing_0041_add_sub_cmp_jnz.asm",
-        input_dir ++ "listing_0042_completionist_decode.asm",
-    };
+    var asm_inputs = try std.ArrayList([]u8).initCapacity(allocator, 30);
+    const idir = try std.fs.cwd().openDir(input_dir, .{ .iterate = true });
+    var it = idir.iterate();
+    while (try it.next()) |entry| {
+        if (entry.kind != .file) continue;
+        const extension = std.fs.path.extension(entry.name);
+        if (std.mem.eql(u8, ".asm", extension)) {
+            const file_path = try std.mem.concat(allocator, u8, &[_][]const u8{ input_dir, entry.name });
+            try asm_inputs.append(allocator, file_path);
+        }
+    }
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    for (asm_inputs) |asm_in_file_path| {
+    for (asm_inputs.items) |asm_in_file_path| {
         errdefer {
             std.testing.log_level = .debug;
             std.debug.print("comparison failed for file: {s}\n", .{asm_in_file_path});
