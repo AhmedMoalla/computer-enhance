@@ -18,7 +18,23 @@ cs: u16 = 0,
 ss: u16 = 0,
 ds: u16 = 0,
 
+flags: std.StaticBitSet(Flag.count) = std.StaticBitSet(Flag.count).initEmpty(),
+
 memory: [1024 * 1024]u8 = undefined,
+
+pub const Flag = enum(u4) {
+    c, // Carry
+    p, // Parity
+    a, // Auxiliary carry
+    z, // Zero
+    s, // Sign
+    t, // Trap
+    i, // Interrupt
+    d, // Direction
+    o, // Overflow
+
+    const count = @typeInfo(Flag).@"enum".fields.len;
+};
 
 pub fn write(self: *State, to: ?Operand, value: u16) void {
     switch (to.?) {
@@ -36,6 +52,14 @@ pub fn read(self: State, from: ?Operand) u16 {
         },
         else => unreachable,
     };
+}
+
+pub fn setFlag(self: *State, flag: Flag, value: bool) void {
+    self.flags.setValue(@intFromEnum(flag), value);
+}
+
+pub fn isFlagSet(self: State, flag: Flag) bool {
+    return self.flags.isSet(@intFromEnum(flag));
 }
 
 fn writeReg(self: *State, reg: t.Register, value: u16) void {
@@ -68,6 +92,21 @@ fn readReg(self: State, reg: t.Register) u16 {
         },
         inline else => |reg_type| @field(self, @tagName(reg_type)),
     };
+}
+
+pub fn format(self: State, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    try writer.print("\nFinal registers:\n", .{});
+    inline for (@typeInfo(State).@"struct".fields) |field| {
+        switch (@typeInfo(field.type)) {
+            .int => {
+                const value = @field(self, field.name);
+                if (value > 0) {
+                    try writer.print("      {s}: 0x{x:0>4} ({d})\n", .{ field.name, value, value });
+                }
+            },
+            else => {},
+        }
+    }
 }
 
 pub const Diff = struct {

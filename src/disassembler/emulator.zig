@@ -28,19 +28,7 @@ pub fn execute(in: *std.Io.Reader, out: *std.Io.Writer) !void {
         try out.print("{f}\n", .{diff});
     }
 
-    try out.print("\nFinal registers:\n", .{});
-    inline for (@typeInfo(State).@"struct".fields) |field| {
-        switch (@typeInfo(field.type)) {
-            .int => {
-                const value = @field(state, field.name);
-                if (value > 0) {
-                    try out.print("      {s}: 0x{x:0>4} ({d})\n", .{ field.name, value, value });
-                }
-            },
-            else => {},
-        }
-    }
-    try out.print("\n", .{});
+    try out.print("{f}", .{state});
 
     try out.flush();
 }
