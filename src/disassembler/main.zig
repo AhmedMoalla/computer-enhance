@@ -1,5 +1,6 @@
 const std = @import("std");
 const utils = @import("utils");
+const emulator = @import("emulator.zig");
 const disassembler = @import("disassembler.zig");
 
 const log = std.log;
@@ -21,6 +22,17 @@ pub fn main() !void {
     const bin_file_path = args.pos(0) orelse return error.FileNotFound;
 
     const in = try utils.openFileReaderAlloc(allocator, bin_file_path);
+
+    if (args.has("exec")) {
+        var buffer: [1024]u8 = undefined;
+        const stdout = std.fs.File.stdout();
+        var writer = stdout.writer(&buffer);
+        const out = &writer.interface;
+
+        try emulator.execute(in.interface, out);
+        return;
+    }
+
     const out = try utils.createFileWriterAlloc(
         allocator,
         "{s}.asm",

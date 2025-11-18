@@ -1,5 +1,6 @@
 const std = @import("std");
 const utils = @import("utils");
+const emulator = @import("emulator.zig");
 const disassembler = @import("disassembler.zig");
 
 test "nasm input.asm | disassemble input | nasm | compare nasm_out input" {
@@ -89,3 +90,44 @@ const NasmOutput = struct {
     file_path: []const u8,
     file_content: []const u8,
 };
+
+test "exec | compare" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const input_dir = "computer_enhance/perfaware/part1/";
+
+    const inputs = [_][]const u8{
+        input_dir ++ "listing_0043_immediate_movs",
+        input_dir ++ "listing_0044_register_movs",
+    };
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    for (inputs) |in_file_path| {
+        errdefer {
+            std.testing.log_level = .debug;
+            std.debug.print("comparison failed for file: {s}\n", .{in_file_path});
+            std.testing.log_level = .warn;
+        }
+
+        const in = try utils.openFileReaderAlloc(allocator, in_file_path);
+        var buffer: [2048]u8 = undefined;
+        var out = std.Io.Writer.fixed(&buffer);
+        try out.print("--- test\\{s} execution ---\n", .{in.file_name});
+        try emulator.execute(in.interface, &out);
+        try out.flush();
+        const result = out.buffered();
+
+        const expected_file_path = try std.fmt.allocPrint(allocator, "{s}.txt", .{in_file_path});
+        const expected_in = try utils.openFileReaderAlloc(allocator, expected_file_path);
+        const stat = try expected_in.file.stat();
+
+        const expected_crlf = try expected_in.interface.readAlloc(allocator, stat.size);
+        const expected = try std.mem.replaceOwned(u8, allocator, expected_crlf, "\r", "");
+
+        try std.testing.expectEqualSlices(u8, expected, result);
+    }
+}
