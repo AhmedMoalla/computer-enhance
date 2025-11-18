@@ -29,14 +29,17 @@ pub fn execute(in: *std.Io.Reader, out: *std.Io.Writer) !void {
     }
 
     try out.print("\nFinal registers:\n", .{});
-    try out.print("      ax: 0x{x:0>4} ({d})\n", .{ state.ax, state.ax });
-    try out.print("      bx: 0x{x:0>4} ({d})\n", .{ state.bx, state.bx });
-    try out.print("      cx: 0x{x:0>4} ({d})\n", .{ state.cx, state.cx });
-    try out.print("      dx: 0x{x:0>4} ({d})\n", .{ state.dx, state.dx });
-    try out.print("      sp: 0x{x:0>4} ({d})\n", .{ state.sp, state.sp });
-    try out.print("      bp: 0x{x:0>4} ({d})\n", .{ state.bp, state.bp });
-    try out.print("      si: 0x{x:0>4} ({d})\n", .{ state.si, state.si });
-    try out.print("      di: 0x{x:0>4} ({d})\n", .{ state.di, state.di });
+    inline for (@typeInfo(State).@"struct".fields) |field| {
+        switch (@typeInfo(field.type)) {
+            .int => {
+                const value = @field(state, field.name);
+                if (value > 0) {
+                    try out.print("      {s}: 0x{x:0>4} ({d})\n", .{ field.name, value, value });
+                }
+            },
+            else => {},
+        }
+    }
     try out.print("\n", .{});
 
     try out.flush();

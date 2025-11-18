@@ -13,6 +13,11 @@ bp: u16 = 0,
 si: u16 = 0,
 di: u16 = 0,
 
+es: u16 = 0,
+cs: u16 = 0,
+ss: u16 = 0,
+ds: u16 = 0,
+
 memory: [1024 * 1024]u8 = undefined,
 
 pub fn write(self: *State, to: ?Operand, value: u16) void {
@@ -35,29 +40,33 @@ pub fn read(self: State, from: ?Operand) u16 {
 
 fn writeReg(self: *State, reg: t.Register, value: u16) void {
     switch (reg.type) {
-        .a => self.ax = value,
-        .b => self.bx = value,
-        .c => self.cx = value,
-        .d => self.dx = value,
-        .sp => self.sp = value,
-        .bp => self.bp = value,
-        .si => self.si = value,
-        .di => self.di = value,
-        else => unreachable,
+        inline .a, .b, .c, .d => |reg_type| {
+            const reg_name = @tagName(reg_type) ++ "x";
+            if (reg.width == 1) {
+                const shift: u4 = reg.offset * @as(u4, 8);
+                const mask: u16 = @as(u16, 0xFF00) >> shift;
+                @field(self, reg_name) = (@field(self, reg_name) & mask) | (value << shift);
+            } else {
+                @field(self, reg_name) = value;
+            }
+        },
+        inline else => |reg_type| @field(self, @tagName(reg_type)) = value,
     }
 }
 
 fn readReg(self: State, reg: t.Register) u16 {
     return switch (reg.type) {
-        .a => return self.ax,
-        .b => return self.bx,
-        .c => return self.cx,
-        .d => return self.dx,
-        .sp => return self.sp,
-        .bp => return self.bp,
-        .si => return self.si,
-        .di => return self.di,
-        else => unreachable,
+        inline .a, .b, .c, .d => |reg_type| {
+            const reg_name = @tagName(reg_type) ++ "x";
+            if (reg.width == 1) {
+                const shift: u4 = reg.offset * @as(u4, 8);
+                const mask: u16 = @as(u16, 0xFF) << shift;
+                return (@field(self, reg_name) & mask) >> shift;
+            } else {
+                return @field(self, reg_name);
+            }
+        },
+        inline else => |reg_type| @field(self, @tagName(reg_type)),
     };
 }
 

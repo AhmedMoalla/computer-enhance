@@ -101,6 +101,7 @@ test "exec | compare" {
     const inputs = [_][]const u8{
         input_dir ++ "listing_0043_immediate_movs",
         input_dir ++ "listing_0044_register_movs",
+        input_dir ++ "listing_0045_challenge_register_movs",
     };
 
     var tmp = std.testing.tmpDir(.{});

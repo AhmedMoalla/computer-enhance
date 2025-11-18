@@ -162,7 +162,7 @@ pub const Register = struct {
     name: []const u8,
     type: RegisterType,
     width: u8, // 1 or 2
-    offset: u8, // 1 or 2
+    offset: u1,
 };
 
 pub const effective_address_calculations: [8]decoder.Operand = .{
@@ -223,7 +223,7 @@ pub const encodings = [_]Encoding{
     e(.mov, "Accumulator to memory", //
         .{ "1010001", .w, .address, .address_w }, .{ .mod = 0, .reg = 0, .rm = 0b110 }),
     e(.mov, "Register/memory to segment register", //
-        .{ "10001110", .mod, "0", .seg, .rm, .disp, .disp_w }, .{ .w = 1 }),
+        .{ "10001110", .mod, "0", .seg, .rm, .disp, .disp_w }, .{ .d = 1, .w = 1 }),
     e(.mov, "Segment register to register/memory", //
         .{ "10001100", .mod, "0", .seg, .rm, .disp, .disp_w }, .{ .w = 1 }),
 
