@@ -1,8 +1,10 @@
 const std = @import("std");
+const utils = @import("utils");
 const t = @import("tables.zig");
 const Operand = @import("decoder.zig").Operand;
 
 const State = @This();
+const FlagsBitSet = std.StaticBitSet(Flag.count);
 
 ax: u16 = 0,
 bx: u16 = 0,
@@ -18,20 +20,20 @@ cs: u16 = 0,
 ss: u16 = 0,
 ds: u16 = 0,
 
-flags: std.StaticBitSet(Flag.count) = std.StaticBitSet(Flag.count).initEmpty(),
+flags: FlagsBitSet = FlagsBitSet.initEmpty(),
 
 memory: [1024 * 1024]u8 = undefined,
 
 pub const Flag = enum(u4) {
-    c, // Carry
-    p, // Parity
-    a, // Auxiliary carry
-    z, // Zero
-    s, // Sign
-    t, // Trap
-    i, // Interrupt
-    d, // Direction
-    o, // Overflow
+    C, // Carry
+    P, // Parity
+    A, // Auxiliary carry
+    Z, // Zero
+    S, // Sign
+    T, // Trap
+    I, // Interrupt
+    D, // Direction
+    O, // Overflow
 
     const count = @typeInfo(Flag).@"enum".fields.len;
 };
@@ -107,6 +109,21 @@ pub fn format(self: State, writer: *std.Io.Writer) std.Io.Writer.Error!void {
             else => {},
         }
     }
+
+    if (self.flags.mask != 0) {
+        try writer.print("   flags: ", .{});
+        try formatFlags(self, writer);
+    }
+}
+
+fn formatFlags(state: State, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    if (state.flags.mask != 0) {
+        inline for (@typeInfo(Flag).@"enum".fields) |field| {
+            if (state.flags.isSet(field.value)) {
+                try writer.print("{s}", .{field.name});
+            }
+        }
+    }
 }
 
 pub const Diff = struct {
@@ -135,6 +152,14 @@ pub const Diff = struct {
                     },
                     else => {},
                 }
+            }
+
+            if (!previous.flags.eql(current.flags)) {
+                try writer.print("flags:", .{});
+                try formatFlags(previous, writer);
+                try writer.print("->", .{});
+                try formatFlags(current, writer);
+                try writer.print(" ", .{});
             }
         } else {
             try writer.print("BAD DIFF", .{});

@@ -102,6 +102,7 @@ test "exec | compare" {
         input_dir ++ "listing_0043_immediate_movs",
         input_dir ++ "listing_0044_register_movs",
         input_dir ++ "listing_0045_challenge_register_movs",
+        input_dir ++ "listing_0046_add_sub_cmp",
     };
 
     var tmp = std.testing.tmpDir(.{});
@@ -120,15 +121,16 @@ test "exec | compare" {
         try out.print("--- test\\{s} execution ---\n", .{in.file_name});
         try emulator.execute(in.interface, &out);
         try out.flush();
-        const result = out.buffered();
+        const result_trimmed = std.mem.trimEnd(u8, out.buffered(), "\n");
 
         const expected_file_path = try std.fmt.allocPrint(allocator, "{s}.txt", .{in_file_path});
         const expected_in = try utils.openFileReaderAlloc(allocator, expected_file_path);
         const stat = try expected_in.file.stat();
 
         const expected_crlf = try expected_in.interface.readAlloc(allocator, stat.size);
-        const expected = try std.mem.replaceOwned(u8, allocator, expected_crlf, "\r", "");
+        const expected: []u8 = try std.mem.replaceOwned(u8, allocator, expected_crlf, "\r", "");
+        const expected_trimmed = std.mem.trimEnd(u8, expected, "\n");
 
-        try std.testing.expectEqualSlices(u8, expected, result);
+        try std.testing.expectEqualSlices(u8, expected_trimmed, result_trimmed);
     }
 }
