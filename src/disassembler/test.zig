@@ -103,6 +103,7 @@ test "exec | compare" {
         input_dir ++ "listing_0044_register_movs",
         input_dir ++ "listing_0045_challenge_register_movs",
         input_dir ++ "listing_0046_add_sub_cmp",
+        input_dir ++ "listing_0047_challenge_flags",
     };
 
     var tmp = std.testing.tmpDir(.{});

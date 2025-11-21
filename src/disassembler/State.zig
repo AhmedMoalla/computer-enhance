@@ -45,15 +45,18 @@ pub fn write(self: *State, to: ?Operand, value: u16) void {
     }
 }
 
-pub fn read(self: State, from: ?Operand) u16 {
-    return switch (from.?) {
-        .register => |reg| self.readReg(reg),
+pub fn read(self: State, from: ?Operand) struct { signed: i16, unsigned: u16 } {
+    switch (from.?) {
+        .register => |reg| {
+            const value = self.readReg(reg);
+            return .{ .signed = @bitCast(value), .unsigned = value };
+        },
         .immediate => |imm| {
             const imm_u32: u32 = @bitCast(imm.value);
-            return @truncate(imm_u32);
+            return .{ .signed = @truncate(imm.value), .unsigned = @truncate(imm_u32) };
         },
         else => unreachable,
-    };
+    }
 }
 
 pub fn setFlag(self: *State, flag: Flag, value: bool) void {
