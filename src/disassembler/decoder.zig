@@ -78,45 +78,17 @@ pub const Operand = union(enum) {
     }
 };
 
-// Takes first two bytes and tries to find if they match an encoding.
-// The matching encoding has its .bits layout component matching those in the the first two bytes.
-fn findEncoding(bytes: []u8, encodings1: std.AutoHashMap(u8, t.Encoding)) !t.Encoding {
-    std.debug.assert(bytes.len == 2);
-    log.debug("bytes={b:0>8} {b:0>8} ({X:0>2} {X:0>2})", .{ bytes[0], bytes[1], bytes[0], bytes[1] });
-
-    if (encodings1.get(bytes[0])) |encoding| {
-        return encoding;
+pub fn decodeAll(allocator: std.mem.Allocator, in: *std.Io.Reader) ![]Instruction {
+    var instructions = try std.ArrayList(Instruction).initCapacity(allocator, 50);
+    const encodings1 = generateEncodings1(allocator);
+    while (true) {
+        const instr = decode(in, encodings1) catch |err| switch (err) {
+            error.EndOfStream => break,
+            else => return err,
+        };
+        try instructions.append(allocator, instr);
     }
-
-    const word: u16 = (@as(u16, bytes[0]) << 8) | bytes[1];
-    return layout_loop: for (t.encodings) |encoding| {
-        var valid = true;
-        var remaining_bit_size: u8 = @bitSizeOf(u16);
-        var remaining_bits = word;
-
-        for (encoding.layout) |component| {
-            if (component.size == 0) continue;
-
-            var shift: u4 = @intCast(remaining_bit_size - component.size);
-            const in_bits = remaining_bits >> shift;
-            remaining_bit_size -= component.size;
-
-            if (remaining_bit_size == 0) {
-                break;
-            }
-
-            shift = @intCast(16 - remaining_bit_size);
-            remaining_bits &= @as(u16, 0xFFFF) >> shift;
-
-            if (component.type == .bits and in_bits != component.value) {
-                valid = false;
-                break;
-            }
-        }
-        if (valid) {
-            break :layout_loop encoding;
-        }
-    } else error.InvalidInstruction;
+    return instructions.toOwnedSlice(allocator);
 }
 
 pub fn decode(in: *std.Io.Reader, encodings1: std.AutoHashMap(u8, t.Encoding)) !Instruction {
@@ -316,6 +288,77 @@ pub fn decode(in: *std.Io.Reader, encodings1: std.AutoHashMap(u8, t.Encoding)) !
         .size = size,
         .components = components,
     };
+}
+
+// Takes first two bytes and tries to find if they match an encoding.
+// The matching encoding has its .bits layout component matching those in the the first two bytes.
+fn findEncoding(bytes: []u8, encodings1: std.AutoHashMap(u8, t.Encoding)) !t.Encoding {
+    std.debug.assert(bytes.len == 2);
+    log.debug("bytes={b:0>8} {b:0>8} ({X:0>2} {X:0>2})", .{ bytes[0], bytes[1], bytes[0], bytes[1] });
+
+    if (encodings1.get(bytes[0])) |encoding| {
+        return encoding;
+    }
+
+    const word: u16 = (@as(u16, bytes[0]) << 8) | bytes[1];
+    return layout_loop: for (t.encodings) |encoding| {
+        var valid = true;
+        var remaining_bit_size: u8 = @bitSizeOf(u16);
+        var remaining_bits = word;
+
+        for (encoding.layout) |component| {
+            if (component.size == 0) continue;
+
+            var shift: u4 = @intCast(remaining_bit_size - component.size);
+            const in_bits = remaining_bits >> shift;
+            remaining_bit_size -= component.size;
+
+            if (remaining_bit_size == 0) {
+                break;
+            }
+
+            shift = @intCast(16 - remaining_bit_size);
+            remaining_bits &= @as(u16, 0xFFFF) >> shift;
+
+            if (component.type == .bits and in_bits != component.value) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid) {
+            break :layout_loop encoding;
+        }
+    } else error.InvalidInstruction;
+}
+
+pub fn generateEncodings1(allocator: std.mem.Allocator) std.AutoHashMap(u8, t.Encoding) {
+    var ambiguous = std.AutoArrayHashMap(u8, bool).init(allocator);
+    var map = std.AutoHashMap(u8, t.Encoding).init(allocator);
+    for (t.encodings) |encoding| {
+        var valid = false;
+        for (encoding.layout) |component| {
+            if (component.type == .bits and component.size == 8) {
+                valid = true;
+            }
+            if (component.type == .bits and component.size < 8) {
+                valid = false;
+            }
+
+            if (valid) {
+                const present = map.fetchPut(component.value, encoding) catch unreachable != null;
+                if (present) {
+                    ambiguous.put(component.value, true) catch unreachable;
+                }
+                break;
+            }
+        }
+    }
+
+    for (ambiguous.keys()) |key| {
+        _ = map.remove(key);
+    }
+
+    return map;
 }
 
 fn displacement(comptime T: type, components: std.EnumMap(t.ComponentType, u16)) T {

@@ -1,22 +1,17 @@
 const std = @import("std");
-const log = std.log.scoped(.disasm);
 const t = @import("tables.zig");
 const decoder = @import("decoder.zig");
 const disassembler = @import("disassembler.zig");
 const State = @import("State.zig");
 
-pub fn execute(in: *std.Io.Reader, out: *std.Io.Writer) !void {
-    var state = State{};
-    var buffer: [16384]u8 = undefined;
-    var fba = std.heap.FixedBufferAllocator.init(&buffer);
-    const allocator = fba.allocator();
+const log = std.log.scoped(.disasm);
 
-    const encodings1 = disassembler.generateEncodings1(allocator);
+pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Writer) !void {
+    var state = State{};
+
+    var program = Program{ .ip = &state.ip, .instructions = try decoder.decodeAll(allocator, in) };
     while (true) {
-        const instr = decoder.decode(in, encodings1) catch |err| switch (err) {
-            error.EndOfStream => break,
-            else => return err,
-        };
+        const instr = program.current();
         try out.print("{f} ; ", .{instr});
 
         var diff = State.Diff.init(state);
@@ -28,14 +23,36 @@ pub fn execute(in: *std.Io.Reader, out: *std.Io.Writer) !void {
             .cmp => _ = arithmeticOp(&state, instr, sub, wide),
             else => std.debug.print("{t} not implemented yet\n", .{instr.op}),
         }
+        program.advance(instr.size);
         diff.compare(state);
         try out.print("{f}\n", .{diff});
+        if (program.done()) break;
     }
 
     try out.print("{f}", .{state});
 
     try out.flush();
 }
+
+const Program = struct {
+    ip: *u16,
+    instructions: []decoder.Instruction,
+
+    ip_index: usize = 0,
+
+    pub fn current(self: Program) decoder.Instruction {
+        return self.instructions[self.ip_index];
+    }
+
+    pub fn advance(self: *Program, instruction_size: usize) void {
+        self.ip.* += @intCast(instruction_size);
+        self.ip_index += 1;
+    }
+
+    pub fn done(self: Program) bool {
+        return self.ip_index == self.instructions.len;
+    }
+};
 
 const ArithmeticOp = fn (state: State, lhs: ?decoder.Operand, rhs: ?decoder.Operand) ArithmeticOpResult;
 

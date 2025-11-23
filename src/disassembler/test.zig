@@ -2,6 +2,7 @@ const std = @import("std");
 const utils = @import("utils");
 const emulator = @import("emulator.zig");
 const disassembler = @import("disassembler.zig");
+const State = @import("State.zig");
 
 test "nasm input.asm | disassemble input | nasm | compare nasm_out input" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -104,23 +105,27 @@ test "exec | compare" {
         input_dir ++ "listing_0045_challenge_register_movs",
         input_dir ++ "listing_0046_add_sub_cmp",
         input_dir ++ "listing_0047_challenge_flags",
+        input_dir ++ "listing_0048_ip_register",
     };
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    for (inputs) |in_file_path| {
+    for (inputs, 0..) |in_file_path, i| {
         errdefer {
             std.testing.log_level = .debug;
             std.debug.print("comparison failed for file: {s}\n", .{in_file_path});
             std.testing.log_level = .warn;
         }
 
+        // listings 48 and upwards prints ip but the ones before do not
+        State.print_instruction_pointer = i >= 5;
+
         const in = try utils.openFileReaderAlloc(allocator, in_file_path);
         var buffer: [2048]u8 = undefined;
         var out = std.Io.Writer.fixed(&buffer);
         try out.print("--- test\\{s} execution ---\n", .{in.file_name});
-        try emulator.execute(in.interface, &out);
+        try emulator.execute(allocator, in.interface, &out);
         try out.flush();
         const result_trimmed = std.mem.trimEnd(u8, out.buffered(), "\n");
 

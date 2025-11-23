@@ -29,7 +29,7 @@ pub fn main() !void {
         var writer = stdout.writer(&buffer);
         const out = &writer.interface;
 
-        try emulator.execute(in.interface, out);
+        try emulator.execute(allocator, in.interface, out);
         return;
     }
 

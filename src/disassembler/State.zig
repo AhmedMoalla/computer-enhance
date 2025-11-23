@@ -6,6 +6,8 @@ const Operand = @import("decoder.zig").Operand;
 const State = @This();
 const FlagsBitSet = std.StaticBitSet(Flag.count);
 
+pub var print_instruction_pointer: bool = true;
+
 ax: u16 = 0,
 bx: u16 = 0,
 cx: u16 = 0,
@@ -19,6 +21,8 @@ es: u16 = 0,
 cs: u16 = 0,
 ss: u16 = 0,
 ds: u16 = 0,
+
+ip: u16 = 0,
 
 flags: FlagsBitSet = FlagsBitSet.initEmpty(),
 
@@ -104,9 +108,11 @@ pub fn format(self: State, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     inline for (@typeInfo(State).@"struct".fields) |field| {
         switch (@typeInfo(field.type)) {
             .int => {
-                const value = @field(self, field.name);
-                if (value > 0) {
-                    try writer.print("      {s}: 0x{x:0>4} ({d})\n", .{ field.name, value, value });
+                if (!std.mem.eql(u8, field.name, "ip") or print_instruction_pointer) {
+                    const value = @field(self, field.name);
+                    if (value > 0) {
+                        try writer.print("      {s}: 0x{x:0>4} ({d})\n", .{ field.name, value, value });
+                    }
                 }
             },
             else => {},
@@ -147,10 +153,12 @@ pub const Diff = struct {
             inline for (@typeInfo(State).@"struct".fields) |field| {
                 switch (@typeInfo(field.type)) {
                     .int => {
-                        const previous_value = @field(previous, field.name);
-                        const current_value = @field(current, field.name);
-                        if (previous_value != current_value) {
-                            try writer.print("{s}:0x{x}->0x{x} ", .{ field.name, previous_value, current_value });
+                        if (!std.mem.eql(u8, field.name, "ip") or print_instruction_pointer) {
+                            const previous_value = @field(previous, field.name);
+                            const current_value = @field(current, field.name);
+                            if (previous_value != current_value) {
+                                try writer.print("{s}:0x{x}->0x{x} ", .{ field.name, previous_value, current_value });
+                            }
                         }
                     },
                     else => {},
