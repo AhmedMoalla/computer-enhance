@@ -23,6 +23,13 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
             .sub => state.write(instr.lhs, arithmeticOp(&state, instr, sub, wide)),
             .cmp => _ = arithmeticOp(&state, instr, sub, wide),
             .jne => jumped = jump(&state, instr, !state.isFlagSet(.Z)),
+            .je => jumped = jump(&state, instr, state.isFlagSet(.Z)),
+            .jp => jumped = jump(&state, instr, state.isFlagSet(.P)),
+            .jb => jumped = jump(&state, instr, state.isFlagSet(.C)),
+            .loopnz => {
+                state.cx -= 1;
+                jumped = jump(&state, instr, state.cx != 0 and !state.isFlagSet(.Z));
+            },
             else => std.debug.print("{t} not implemented yet\n", .{instr.op}),
         }
         program.advance(instr.size, jumped);
