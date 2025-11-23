@@ -110,6 +110,9 @@ test "exec | compare" {
         input_dir ++ "listing_0050_challenge_jumps",
         input_dir ++ "listing_0051_memory_mov",
         input_dir ++ "listing_0052_memory_add_loop",
+        input_dir ++ "listing_0053_add_loop_challenge",
+        input_dir ++ "listing_0054_draw_rectangle",
+        input_dir ++ "listing_0055_challenge_rectangle",
     };
 
     var tmp = std.testing.tmpDir(.{});
@@ -126,10 +129,12 @@ test "exec | compare" {
         State.print_instruction_pointer = i >= 5;
 
         const in = try utils.openFileReaderAlloc(allocator, in_file_path);
-        var buffer: [2048]u8 = undefined;
-        var out = std.Io.Writer.fixed(&buffer);
+        var allocating = try std.Io.Writer.Allocating.initCapacity(allocator, 1024 * 1024 * 5);
+        defer allocating.deinit();
+
+        var out = &allocating.writer;
         try out.print("--- test\\{s} execution ---\n", .{in.file_name});
-        try emulator.execute(allocator, in.interface, &out);
+        try emulator.execute(allocator, in.interface, out);
         try out.flush();
         const result_trimmed = std.mem.trimEnd(u8, out.buffered(), "\n");
 

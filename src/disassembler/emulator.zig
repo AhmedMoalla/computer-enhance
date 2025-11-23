@@ -30,6 +30,10 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
                 state.cx -= 1;
                 jumped = jump(&state, instr, state.cx != 0 and !state.isFlagSet(.Z));
             },
+            .loop => {
+                state.cx -= 1;
+                jumped = jump(&state, instr, state.cx != 0);
+            },
             else => std.debug.print("{t} not implemented yet\n", .{instr.op}),
         }
         program.advance(instr.size, jumped);
