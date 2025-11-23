@@ -106,6 +106,7 @@ test "exec | compare" {
         input_dir ++ "listing_0046_add_sub_cmp",
         input_dir ++ "listing_0047_challenge_flags",
         input_dir ++ "listing_0048_ip_register",
+        input_dir ++ "listing_0049_conditional_jumps",
     };
 
     var tmp = std.testing.tmpDir(.{});

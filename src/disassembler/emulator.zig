@@ -14,6 +14,7 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
         const instr = program.current();
         try out.print("{f} ; ", .{instr});
 
+        var jumped = false;
         var diff = State.Diff.init(state);
         const wide = instr.components.get(.w) == 1;
         switch (instr.op) {
@@ -21,9 +22,10 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
             .add => state.write(instr.lhs, arithmeticOp(&state, instr, add, wide)),
             .sub => state.write(instr.lhs, arithmeticOp(&state, instr, sub, wide)),
             .cmp => _ = arithmeticOp(&state, instr, sub, wide),
+            .jne => jumped = jump(&state, instr, !state.isFlagSet(.Z)),
             else => std.debug.print("{t} not implemented yet\n", .{instr.op}),
         }
-        program.advance(instr.size);
+        program.advance(instr.size, jumped);
         diff.compare(state);
         try out.print("{f}\n", .{diff});
         if (program.done()) break;
@@ -32,6 +34,20 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
     try out.print("{f}", .{state});
 
     try out.flush();
+}
+
+fn jump(state: *State, instr: decoder.Instruction, condition: bool) bool {
+    if (condition) {
+        const value = instr.lhs.?.immediate.value;
+        const offset: i32 = @as(i32, @intCast(instr.size)) + value;
+        if (offset >= 0) {
+            state.ip += @intCast(offset);
+        } else {
+            state.ip -= @intCast(-offset);
+        }
+        return true;
+    }
+    return false;
 }
 
 const Program = struct {
@@ -44,9 +60,21 @@ const Program = struct {
         return self.instructions[self.ip_index];
     }
 
-    pub fn advance(self: *Program, instruction_size: usize) void {
-        self.ip.* += @intCast(instruction_size);
-        self.ip_index += 1;
+    pub fn advance(self: *Program, instruction_size: usize, jumped: bool) void {
+        if (jumped) {
+            var ip: usize = 0;
+            self.ip_index = 0;
+            for (self.instructions) |instr| {
+                self.ip_index += 1;
+                ip += instr.size;
+                if (ip == self.ip.*) {
+                    break;
+                }
+            }
+        } else {
+            self.ip.* += @intCast(instruction_size);
+            self.ip_index += 1;
+        }
     }
 
     pub fn done(self: Program) bool {
