@@ -55,6 +55,9 @@ pub fn write(self: *State, to: ?Operand, value: u16, wide: bool) void {
         },
         .effective_address_calculation => |eac| {
             var da = self.readReg(eac.reg1);
+            if (eac.reg2) |reg2| {
+                da += self.readReg(reg2);
+            }
             if (eac.displacement >= 0) {
                 da += @intCast(eac.displacement);
             } else {
@@ -67,7 +70,7 @@ pub fn write(self: *State, to: ?Operand, value: u16, wide: bool) void {
 }
 
 pub fn read(self: State, from: ?Operand, wide: bool) struct { signed: i16, unsigned: u16 } {
-    switch (from.?) {
+    sw: switch (from.?) {
         .register => |reg| {
             const value = self.readReg(reg);
             return .{ .signed = @bitCast(value), .unsigned = value };
@@ -84,7 +87,18 @@ pub fn read(self: State, from: ?Operand, wide: bool) struct { signed: i16, unsig
                 return .{ .signed = self.memory[da], .unsigned = @intCast(self.memory[da]) };
             }
         },
-        else => unreachable,
+        .effective_address_calculation => |eac| {
+            var da = self.readReg(eac.reg1);
+            if (eac.reg2) |reg2| {
+                da += self.readReg(reg2);
+            }
+            if (eac.displacement >= 0) {
+                da += @intCast(eac.displacement);
+            } else {
+                da -= @intCast(-eac.displacement);
+            }
+            continue :sw .{ .direct_address = da };
+        },
     }
 }
 
