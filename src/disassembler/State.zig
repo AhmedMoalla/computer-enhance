@@ -42,14 +42,31 @@ pub const Flag = enum(u4) {
     const count = @typeInfo(Flag).@"enum".fields.len;
 };
 
-pub fn write(self: *State, to: ?Operand, value: u16) void {
-    switch (to.?) {
+pub fn write(self: *State, to: ?Operand, value: u16, wide: bool) void {
+    sw: switch (to.?) {
         .register => |reg| self.writeReg(reg, value),
+        .direct_address => |da| {
+            if (wide) {
+                self.memory[da] = @truncate(value >> 8);
+                self.memory[da + 1] = @truncate(value & 0xFF);
+            } else {
+                self.memory[da] = @truncate(value & 0xFF);
+            }
+        },
+        .effective_address_calculation => |eac| {
+            var da = self.readReg(eac.reg1);
+            if (eac.displacement >= 0) {
+                da += @intCast(eac.displacement);
+            } else {
+                da -= @intCast(-eac.displacement);
+            }
+            continue :sw .{ .direct_address = da };
+        },
         else => unreachable,
     }
 }
 
-pub fn read(self: State, from: ?Operand) struct { signed: i16, unsigned: u16 } {
+pub fn read(self: State, from: ?Operand, wide: bool) struct { signed: i16, unsigned: u16 } {
     switch (from.?) {
         .register => |reg| {
             const value = self.readReg(reg);
@@ -58,6 +75,14 @@ pub fn read(self: State, from: ?Operand) struct { signed: i16, unsigned: u16 } {
         .immediate => |imm| {
             const imm_u32: u32 = @bitCast(imm.value);
             return .{ .signed = @truncate(imm.value), .unsigned = @truncate(imm_u32) };
+        },
+        .direct_address => |da| {
+            if (wide) {
+                const value = std.mem.readVarInt(u16, self.memory[da .. da + 2], .big);
+                return .{ .signed = @bitCast(value), .unsigned = @intCast(value) };
+            } else {
+                return .{ .signed = self.memory[da], .unsigned = @intCast(self.memory[da]) };
+            }
         },
         else => unreachable,
     }

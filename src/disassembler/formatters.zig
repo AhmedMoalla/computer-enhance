@@ -76,16 +76,16 @@ fn formatOperandSegment(instr: decoder.Instruction, operand: decoder.Operand, wr
 
 fn formatOperand(instr: decoder.Instruction, operand: decoder.Operand, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     switch (operand) {
-        .direct_address => |da| try writer.print("[{d}]", .{da}),
+        .direct_address => |da| try writer.print("[+{d}]", .{da}),
         .effective_address_calculation => |eac| {
             try writer.print("[{s}", .{eac.reg1.name});
             if (eac.reg2) |reg2| {
-                try writer.print(" + {s}", .{reg2.name});
+                try writer.print("+{s}", .{reg2.name});
             }
             if (eac.displacement > 0) {
-                try writer.print(" + {}", .{@abs(eac.displacement)});
+                try writer.print("+{}", .{@abs(eac.displacement)});
             } else if (eac.displacement < 0) {
-                try writer.print(" - {}", .{@abs(eac.displacement)});
+                try writer.print("-{}", .{@abs(eac.displacement)});
             }
             try writer.print("]", .{});
         },

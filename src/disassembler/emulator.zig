@@ -18,10 +18,10 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
         var diff = State.Diff.init(state);
         const wide = instr.components.get(.w) == 1;
         switch (instr.op) {
-            .mov => state.write(instr.lhs, state.read(instr.rhs).unsigned),
-            .add => state.write(instr.lhs, arithmeticOp(&state, instr, add, wide)),
-            .sub => state.write(instr.lhs, arithmeticOp(&state, instr, sub, wide)),
-            .cmp => _ = arithmeticOp(&state, instr, sub, wide),
+            .mov => state.write(instr.lhs, state.read(instr.rhs, wide).unsigned, wide),
+            .add => state.write(instr.lhs, arithmeticOp(&state, instr, add), wide),
+            .sub => state.write(instr.lhs, arithmeticOp(&state, instr, sub), wide),
+            .cmp => _ = arithmeticOp(&state, instr, sub),
             .jne => jumped = jump(&state, instr, !state.isFlagSet(.Z)),
             .je => jumped = jump(&state, instr, state.isFlagSet(.Z)),
             .jp => jumped = jump(&state, instr, state.isFlagSet(.P)),
@@ -89,7 +89,7 @@ const Program = struct {
     }
 };
 
-const ArithmeticOp = fn (state: State, lhs: ?decoder.Operand, rhs: ?decoder.Operand) ArithmeticOpResult;
+const ArithmeticOp = fn (state: State, lhs: ?decoder.Operand, rhs: ?decoder.Operand, wide: bool) ArithmeticOpResult;
 
 const ArithmeticOpResult = struct {
     unsigned: u16,
@@ -98,9 +98,9 @@ const ArithmeticOpResult = struct {
     low_nibble_overflowed: bool,
 };
 
-fn add(state: State, lhs_op: ?decoder.Operand, rhs_op: ?decoder.Operand) ArithmeticOpResult {
-    const lhs = state.read(lhs_op);
-    const rhs = state.read(rhs_op);
+fn add(state: State, lhs_op: ?decoder.Operand, rhs_op: ?decoder.Operand, wide: bool) ArithmeticOpResult {
+    const lhs = state.read(lhs_op, wide);
+    const rhs = state.read(rhs_op, wide);
 
     const signed_result = @addWithOverflow(lhs.signed, rhs.signed);
     const unsigned_result = @addWithOverflow(lhs.unsigned, rhs.unsigned);
@@ -112,9 +112,9 @@ fn add(state: State, lhs_op: ?decoder.Operand, rhs_op: ?decoder.Operand) Arithme
     };
 }
 
-fn sub(state: State, lhs_op: ?decoder.Operand, rhs_op: ?decoder.Operand) ArithmeticOpResult {
-    const lhs = state.read(lhs_op);
-    const rhs = state.read(rhs_op);
+fn sub(state: State, lhs_op: ?decoder.Operand, rhs_op: ?decoder.Operand, wide: bool) ArithmeticOpResult {
+    const lhs = state.read(lhs_op, wide);
+    const rhs = state.read(rhs_op, wide);
 
     const signed_result = @subWithOverflow(lhs.signed, rhs.signed);
     const unsigned_result = @subWithOverflow(lhs.unsigned, rhs.unsigned);
@@ -126,8 +126,9 @@ fn sub(state: State, lhs_op: ?decoder.Operand, rhs_op: ?decoder.Operand) Arithme
     };
 }
 
-fn arithmeticOp(state: *State, instr: decoder.Instruction, op: ArithmeticOp, wide: bool) u16 {
-    const result = op(state.*, instr.lhs, instr.rhs);
+fn arithmeticOp(state: *State, instr: decoder.Instruction, op: ArithmeticOp) u16 {
+    const wide = instr.components.get(.w) == 1;
+    const result = op(state.*, instr.lhs, instr.rhs, wide);
     const low_byte: u8 = @truncate(@as(u16, @bitCast(result.signed)) & 0xFF);
     const bit_count = @popCount(low_byte);
     state.setFlag(.P, (bit_count & 1) == 0);
@@ -141,4 +142,55 @@ fn arithmeticOp(state: *State, instr: decoder.Instruction, op: ArithmeticOp, wid
     state.setFlag(.C, result.overflow.unsigned == 1);
     state.setFlag(.A, result.low_nibble_overflowed);
     return result.unsigned;
+}
+
+fn printMemory(memory: []u8) void {
+    std.debug.print("===============================================================\n", .{});
+    defer std.debug.print("===============================================================\n", .{});
+    const bytes_per_row = 16;
+
+    // Print header
+    std.debug.print("          ", .{});
+    for (0..bytes_per_row) |i| {
+        std.debug.print("{X:0>2} ", .{i});
+    }
+    std.debug.print("\n", .{});
+    std.debug.print("        ", .{});
+    for (0..bytes_per_row) |_| {
+        std.debug.print("---", .{});
+    }
+    std.debug.print("--", .{});
+    std.debug.print("\n", .{});
+
+    // Print rows
+    var i: usize = 0;
+    var skipped = false;
+    while (i < memory.len) : (i += bytes_per_row) {
+        const row_end = @min(i + bytes_per_row, memory.len);
+        const row = memory[i..row_end];
+
+        const is_zero_row = blk: {
+            for (row) |b| if (b != 0) break :blk false;
+            break :blk true;
+        };
+
+        const is_first = (i == 0);
+        const is_last = (row_end == memory.len);
+
+        if (is_zero_row and !is_first and !is_last) {
+            // collapse repeated zero lines
+            if (!skipped) {
+                std.debug.print("         *\n", .{});
+                skipped = true;
+            }
+            continue;
+        }
+
+        skipped = false;
+        std.debug.print("{X:0>8}: ", .{i});
+        for (row) |b| {
+            std.debug.print("{X:0>2} ", .{b});
+        }
+        std.debug.print("\n", .{});
+    }
 }
