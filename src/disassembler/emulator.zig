@@ -22,18 +22,35 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
             .add => state.write(instr.lhs, arithmeticOp(&state, instr, add), wide),
             .sub => state.write(instr.lhs, arithmeticOp(&state, instr, sub), wide),
             .cmp => _ = arithmeticOp(&state, instr, sub),
-            .jne => jumped = jump(&state, instr, !state.isFlagSet(.Z)),
             .je => jumped = jump(&state, instr, state.isFlagSet(.Z)),
-            .jp => jumped = jump(&state, instr, state.isFlagSet(.P)),
+            .jl => jumped = jump(&state, instr, !state.isFlagSet(.Z)),
+            .jle => jumped = jump(&state, instr, ((state.getFlag(.S) ^ state.getFlag(.O)) | state.getFlag(.Z)) == 1),
             .jb => jumped = jump(&state, instr, state.isFlagSet(.C)),
-            .loopnz => {
-                state.cx -= 1;
-                jumped = jump(&state, instr, state.cx != 0 and !state.isFlagSet(.Z));
-            },
+            .jbe => jumped = jump(&state, instr, (state.getFlag(.C) | state.getFlag(.Z)) == 1),
+            .jp => jumped = jump(&state, instr, state.isFlagSet(.P)),
+            .jo => jumped = jump(&state, instr, state.isFlagSet(.O)),
+            .js => jumped = jump(&state, instr, state.isFlagSet(.S)),
+            .jne => jumped = jump(&state, instr, !state.isFlagSet(.Z)),
+            .jnl => jumped = jump(&state, instr, (state.getFlag(.S) ^ state.getFlag(.O)) == 0),
+            .jg => jumped = jump(&state, instr, ((state.getFlag(.S) & state.getFlag(.O)) | state.getFlag(.Z)) == 0),
+            .jnb => jumped = jump(&state, instr, !state.isFlagSet(.C)),
+            .ja => jumped = jump(&state, instr, (state.getFlag(.C) | state.getFlag(.Z)) == 0),
+            .jnp => jumped = jump(&state, instr, !state.isFlagSet(.P)),
+            .jno => jumped = jump(&state, instr, !state.isFlagSet(.O)),
+            .jns => jumped = jump(&state, instr, !state.isFlagSet(.S)),
             .loop => {
                 state.cx -= 1;
                 jumped = jump(&state, instr, state.cx != 0);
             },
+            .loopz => {
+                state.cx -= 1;
+                jumped = jump(&state, instr, state.cx != 0 and state.isFlagSet(.Z));
+            },
+            .loopnz => {
+                state.cx -= 1;
+                jumped = jump(&state, instr, state.cx != 0 and !state.isFlagSet(.Z));
+            },
+            .jcxz => jumped = jump(&state, instr, state.cx != 0),
             else => std.debug.print("{t} not implemented yet\n", .{instr.op}),
         }
         program.advance(instr.size, jumped);

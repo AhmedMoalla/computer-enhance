@@ -110,6 +110,10 @@ pub fn isFlagSet(self: State, flag: Flag) bool {
     return self.flags.isSet(@intFromEnum(flag));
 }
 
+pub fn getFlag(self: State, flag: Flag) u1 {
+    return @intFromBool(self.isFlagSet(flag));
+}
+
 fn writeReg(self: *State, reg: t.Register, value: u16) void {
     switch (reg.type) {
         inline .a, .b, .c, .d => |reg_type| {
