@@ -3,12 +3,14 @@ const t = @import("tables.zig");
 const decoder = @import("decoder.zig");
 const disassembler = @import("disassembler.zig");
 const State = @import("State.zig");
+const clock = @import("clock.zig");
 
 const log = std.log.scoped(.disasm);
 
-pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Writer) !void {
+pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Writer, opts: anytype) !void {
     var state = State{};
 
+    var total_clocks: u32 = 0;
     var program = Program{ .ip = &state.ip, .instructions = try decoder.decodeAll(allocator, in) };
     while (true) {
         const instr = program.current();
@@ -54,6 +56,17 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
             else => std.debug.print("{t} not implemented yet\n", .{instr.op}),
         }
         program.advance(instr.size, jumped);
+
+        if (opts.show_clocks) {
+            const op_clocks = clock.estimate(instr);
+            total_clocks += op_clocks.clocks;
+            if (op_clocks.formula) |formula| {
+                try out.print("Clocks: +{d} = {d} {f} | ", .{ op_clocks.clocks, total_clocks, formula });
+            } else {
+                try out.print("Clocks: +{d} = {d} | ", .{ op_clocks.clocks, total_clocks });
+            }
+        }
+
         diff.compare(state);
         try out.print("{f}\n", .{diff});
         if (program.done()) break;

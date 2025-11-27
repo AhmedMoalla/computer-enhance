@@ -32,18 +32,22 @@ pub const Instruction = struct {
     }
 };
 
+pub const EffectiveAddressCalculation = struct {
+    reg1: t.Register,
+    reg2: ?t.Register = null,
+    displacement: i16 = 0,
+};
+
+pub const ImmediateValue = struct {
+    value: i32,
+    jump: bool = false, // Necessary to format for nasm as $+imm or $-imm
+};
+
 pub const Operand = union(enum) {
     direct_address: u16,
-    effective_address_calculation: struct {
-        reg1: t.Register,
-        reg2: ?t.Register = null,
-        displacement: i16 = 0,
-    },
+    effective_address_calculation: EffectiveAddressCalculation,
     register: t.Register,
-    immediate: struct {
-        value: i32,
-        jump: bool = false, // Necessary to format for nasm as $+imm or $-imm
-    },
+    immediate: ImmediateValue,
 
     pub fn directAddress(addr: u16) Operand {
         return .{ .direct_address = addr };

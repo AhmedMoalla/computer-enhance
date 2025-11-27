@@ -134,7 +134,7 @@ test "exec | compare" {
 
         var out = &allocating.writer;
         try out.print("--- test\\{s} execution ---\n", .{in.file_name});
-        try emulator.execute(allocator, in.interface, out);
+        try emulator.execute(allocator, in.interface, out, .{});
         try out.flush();
         const result_trimmed = std.mem.trimEnd(u8, out.buffered(), "\n");
 
