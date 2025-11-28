@@ -10,18 +10,46 @@ pub const ClockEstimate = struct {
         return .{ .clocks = b };
     }
 
-    pub fn ea(b: u32, memory_operand: decoder.Operand) ClockEstimate {
+    pub fn baset(b: u32, memory_operand: decoder.Operand, transfers: u32) ClockEstimate {
+        var result = ClockEstimate{ .clocks = b };
+        if (addressIsOdd(memory_operand)) {
+            const total_transfers = transfers * 4;
+            result.clocks += total_transfers;
+            result.formula = .{ .base = b, .transfers = total_transfers };
+        }
+        return result;
+    }
+
+    pub fn ea(b: u32, memory_operand: decoder.Operand, transfers: u32) ClockEstimate {
         const ea_clocks = eaClocks(memory_operand);
-        return .{ .clocks = b + ea_clocks, .formula = .{ .base = b, .ea = ea_clocks } };
+        var result = ClockEstimate{
+            .clocks = b + ea_clocks,
+            .formula = .{ .base = b, .ea = ea_clocks },
+        };
+        if (addressIsOdd(memory_operand)) {
+            const total_transfers = transfers * 4;
+            result.clocks += total_transfers;
+            result.formula.?.transfers = total_transfers;
+        }
+        return result;
     }
 };
 
 pub const ClockEstimateFormula = struct {
     base: u32,
-    ea: u32,
+    ea: u32 = 0,
+    transfers: u32 = 0,
 
     pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
-        try writer.print("({d} + {d}ea)", .{ self.base, self.ea });
+        try writer.print("({d}", .{self.base});
+
+        if (self.ea != 0) {
+            try writer.print(" + {d}ea", .{self.ea});
+        }
+        if (self.transfers != 0) {
+            try writer.print(" + {d}p", .{self.transfers});
+        }
+        try writer.print(")", .{});
     }
 };
 
@@ -35,11 +63,11 @@ pub fn estimate(instr: decoder.Instruction) ClockEstimate {
                 .register => switch (rhs) {
                     .register => .base(2),
                     .immediate => .base(4),
-                    .direct_address, .effective_address_calculation => .ea(8, rhs),
+                    .direct_address, .effective_address_calculation => .ea(8, rhs, 1),
                 },
                 .direct_address, .effective_address_calculation => switch (rhs) {
-                    .register => |reg| if (reg.type == .a) .base(10) else .ea(9, lhs),
-                    .immediate => .ea(10, lhs),
+                    .register => |reg| if (reg.type == .a) .baset(10, lhs, 1) else .ea(9, lhs, 1),
+                    .immediate => .ea(10, lhs, 1),
                     else => unreachable,
                 },
                 else => unreachable,
@@ -52,12 +80,12 @@ pub fn estimate(instr: decoder.Instruction) ClockEstimate {
             return switch (lhs) {
                 .register => switch (rhs) {
                     .register => .base(3),
-                    .direct_address, .effective_address_calculation => .ea(9, rhs),
+                    .direct_address, .effective_address_calculation => .ea(9, rhs, 1),
                     .immediate => .base(4),
                 },
                 .direct_address, .effective_address_calculation => switch (rhs) {
-                    .register => .ea(16, lhs),
-                    .immediate => .ea(17, lhs),
+                    .register => .ea(16, lhs, 2),
+                    .immediate => .ea(17, lhs, 2),
                     else => unreachable,
                 },
                 else => unreachable,
@@ -87,6 +115,14 @@ fn eaClocks(operand: decoder.Operand) u32 {
             return 5;
         },
         .direct_address => 6,
+        else => unreachable,
+    };
+}
+
+fn addressIsOdd(operand: decoder.Operand) bool {
+    return switch (operand) {
+        .effective_address_calculation => |eac| @mod(eac.displacement, 2) == 1,
+        .direct_address => |da| @mod(da, 2) == 1,
         else => unreachable,
     };
 }

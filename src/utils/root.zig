@@ -116,9 +116,9 @@ pub const FileWriter = struct {
     buffer: []u8,
     file_writer: *std.fs.File.Writer,
 
-    pub fn deinit(self: FileReader, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: FileWriter, allocator: std.mem.Allocator) void {
         allocator.free(self.buffer);
-        allocator.destroy(self.file_reader);
+        allocator.destroy(self.file_writer);
         allocator.free(self.file_path);
         self.file.close();
     }

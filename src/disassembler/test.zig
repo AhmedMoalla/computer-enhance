@@ -113,11 +113,14 @@ test "exec | compare" {
         input_dir ++ "listing_0053_add_loop_challenge",
         input_dir ++ "listing_0054_draw_rectangle",
         input_dir ++ "listing_0055_challenge_rectangle",
+        input_dir ++ "listing_0056_estimating_cycles",
+            // input_dir ++ "listing_0057_challenge_cycles",
     };
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
+    var show_clocks: bool = false;
     for (inputs, 0..) |in_file_path, i| {
         errdefer {
             std.testing.log_level = .debug;
@@ -125,8 +128,11 @@ test "exec | compare" {
             std.testing.log_level = .warn;
         }
 
-        // listings 48 and upwards prints ip but the ones before do not
+        // listings 48 and upwards print ip but the ones before do not
         State.print_instruction_pointer = i >= 5;
+
+        // listings 56 and upwards show clocks but the ones before do not
+        show_clocks = i >= 13;
 
         const in = try utils.openFileReaderAlloc(allocator, in_file_path);
         var allocating = try std.Io.Writer.Allocating.initCapacity(allocator, 1024 * 1024 * 5);
@@ -134,7 +140,7 @@ test "exec | compare" {
 
         var out = &allocating.writer;
         try out.print("--- test\\{s} execution ---\n", .{in.file_name});
-        try emulator.execute(allocator, in.interface, out, .{});
+        try emulator.execute(allocator, in.interface, out, .{ .show_clocks = show_clocks });
         try out.flush();
         const result_trimmed = std.mem.trimEnd(u8, out.buffered(), "\n");
 
@@ -142,10 +148,43 @@ test "exec | compare" {
         const expected_in = try utils.openFileReaderAlloc(allocator, expected_file_path);
         const stat = try expected_in.file.stat();
 
-        const expected_crlf = try expected_in.interface.readAlloc(allocator, stat.size);
-        const expected: []u8 = try std.mem.replaceOwned(u8, allocator, expected_crlf, "\r", "");
-        const expected_trimmed = std.mem.trimEnd(u8, expected, "\n");
+        const expected = try expected_in.interface.readAlloc(allocator, stat.size);
+        const expected_sanitized = try sanitizeExpected(allocator, expected, show_clocks);
 
-        try std.testing.expectEqualSlices(u8, expected_trimmed, result_trimmed);
+        try std.testing.expectEqualSlices(u8, expected_sanitized, result_trimmed);
     }
 }
+
+fn sanitizeExpected(allocator: std.mem.Allocator, expected: []const u8, multiple_results: bool) ![]const u8 {
+    var sanitized: []const u8 = try std.mem.replaceOwned(u8, allocator, expected, "\r", "");
+
+    if (multiple_results) {
+        sanitized = sanitized[header.len + 1 ..];
+        var final_registers_reached = false;
+        var it = std.mem.splitScalar(u8, sanitized, '\n');
+        var char_count: usize = 0;
+        while (it.next()) |line| {
+            if (std.mem.containsAtLeast(u8, line, 1, "Final registers")) {
+                final_registers_reached = true;
+            }
+            if (final_registers_reached and std.mem.eql(u8, "", line)) {
+                break;
+            }
+            char_count += line.len + 1; // +1 for \n for every line
+        }
+        sanitized = sanitized[0..char_count];
+    }
+
+    return std.mem.trimEnd(u8, sanitized, "\n");
+}
+
+const header =
+    \\**************
+    \\**** 8086 ****
+    \\**************
+    \\
+    \\WARNING: Clocks reported by this utility are strictly from the 8086 manual.
+    \\They will be inaccurate, both because the manual clocks are estimates, and because
+    \\some of the entries in the manual look highly suspicious and are probably typos.
+    \\
+;
