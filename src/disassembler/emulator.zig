@@ -12,9 +12,8 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
 
     var total_clocks: u32 = 0;
     var program = Program{ .ip = &state.ip, .instructions = try decoder.decodeAll(allocator, in) };
-    while (true) {
+    emu_loop: while (true) {
         const instr = program.current();
-        try out.print("{f} ; ", .{instr});
 
         var jumped = false;
         var diff = State.Diff.init(state);
@@ -22,8 +21,49 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
         switch (instr.op) {
             .mov => state.write(instr.lhs, state.read(instr.rhs, wide).unsigned, wide),
             .add => state.write(instr.lhs, arithmeticOp(&state, instr, add), wide),
+            .inc => {
+                var inst_copy = instr;
+                inst_copy.rhs = .{ .immediate = .{ .value = 1 } };
+                state.write(instr.lhs, arithmeticOp(&state, inst_copy, add), wide);
+            },
             .sub => state.write(instr.lhs, arithmeticOp(&state, instr, sub), wide),
+            .dec => {
+                var inst_copy = instr;
+                inst_copy.rhs = .{ .immediate = .{ .value = 1 } };
+                state.write(instr.lhs, arithmeticOp(&state, inst_copy, sub), wide);
+            },
             .cmp => _ = arithmeticOp(&state, instr, sub),
+            .@"and" => {
+                const lhs = state.read(instr.rhs, wide).unsigned;
+                const rhs = state.read(instr.rhs, wide).unsigned;
+                const result = lhs & rhs;
+                state.write(instr.lhs, result, wide);
+                updateLogicalFlags(&state, result, wide);
+            },
+            .@"test" => {
+                const lhs = state.read(instr.rhs, wide).unsigned;
+                const rhs = state.read(instr.rhs, wide).unsigned;
+                const result = lhs & rhs;
+                updateLogicalFlags(&state, result, wide);
+            },
+            .@"or" => {
+                const lhs = state.read(instr.rhs, wide).unsigned;
+                const rhs = state.read(instr.rhs, wide).unsigned;
+                const result = lhs | rhs;
+                state.write(instr.lhs, result, wide);
+                updateLogicalFlags(&state, result, wide);
+            },
+            .xor => {
+                const lhs = state.read(instr.rhs, wide).unsigned;
+                const rhs = state.read(instr.rhs, wide).unsigned;
+                const result = lhs ^ rhs;
+                state.write(instr.lhs, result, wide);
+                updateLogicalFlags(&state, result, wide);
+            },
+            .ret => {
+                try out.print("STOPONRET: Return encountered at address {d}.\n", .{state.ip});
+                break :emu_loop;
+            },
             .je => jumped = jump(&state, instr, state.isFlagSet(.Z)),
             .jl => jumped = jump(&state, instr, !state.isFlagSet(.Z)),
             .jle => jumped = jump(&state, instr, ((state.getFlag(.S) ^ state.getFlag(.O)) | state.getFlag(.Z)) == 1),
@@ -57,8 +97,11 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
         }
         program.advance(instr.size, jumped);
 
+        try out.print("{f} ; ", .{instr});
+        try out.flush();
+
         if (opts.show_clocks) {
-            const op_clocks = clock.estimate(instr);
+            const op_clocks = clock.estimate(instr, jumped);
             total_clocks += op_clocks.clocks;
             if (op_clocks.formula) |formula| {
                 try out.print("Clocks: +{d} = {d} {f} | ", .{ op_clocks.clocks, total_clocks, formula });
@@ -75,6 +118,23 @@ pub fn execute(allocator: std.mem.Allocator, in: *std.Io.Reader, out: *std.Io.Wr
     try out.print("{f}", .{state});
 
     try out.flush();
+}
+
+fn updateLogicalFlags(state: *State, result: u16, wide: bool) void {
+    const result_signed: i16 = @intCast(result);
+    const low_byte: u8 = @truncate(@as(u16, @bitCast(result_signed)) & 0xFF);
+    const bit_count = @popCount(low_byte);
+    state.setFlag(.P, (bit_count & 1) == 0);
+    state.setFlag(.Z, result_signed == 0);
+    if (wide) {
+        state.setFlag(.S, result_signed < 0);
+    } else {
+        state.setFlag(.S, @as(i8, @truncate(result_signed)) < 0);
+    }
+
+    state.setFlag(.O, false);
+    state.setFlag(.C, false);
+    state.setFlag(.A, false);
 }
 
 fn jump(state: *State, instr: decoder.Instruction, condition: bool) bool {
@@ -173,7 +233,9 @@ fn arithmeticOp(state: *State, instr: decoder.Instruction, op: ArithmeticOp) u16
         state.setFlag(.S, @as(i8, @truncate(result.signed)) < 0);
     }
     state.setFlag(.O, result.overflow.signed == 1);
-    state.setFlag(.C, result.overflow.unsigned == 1);
+    if (instr.op != .inc and instr.op != .dec) { // inc and dec do not affect CF
+        state.setFlag(.C, result.overflow.unsigned == 1);
+    }
     state.setFlag(.A, result.low_nibble_overflowed);
     return result.unsigned;
 }

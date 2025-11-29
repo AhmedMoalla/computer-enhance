@@ -53,7 +53,7 @@ pub const ClockEstimateFormula = struct {
     }
 };
 
-pub fn estimate(instr: decoder.Instruction) ClockEstimate {
+pub fn estimate(instr: decoder.Instruction, jumped: bool) ClockEstimate {
     return switch (instr.op) {
         .mov => {
             const lhs = instr.lhs.?;
@@ -91,6 +91,85 @@ pub fn estimate(instr: decoder.Instruction) ClockEstimate {
                 else => unreachable,
             };
         },
+        .inc => {
+            const lhs = instr.lhs.?;
+
+            return switch (lhs) {
+                .register => |reg| .base(if (reg.width == 1) 3 else 2),
+                .direct_address, .effective_address_calculation => .ea(15, lhs, 2),
+                else => unreachable,
+            };
+        },
+        .cmp => {
+            const lhs = instr.lhs.?;
+            const rhs = instr.rhs.?;
+
+            return switch (lhs) {
+                .register => switch (rhs) {
+                    .register => .base(3),
+                    .direct_address, .effective_address_calculation => .ea(9, rhs, 1),
+                    .immediate => .base(4),
+                },
+                .direct_address, .effective_address_calculation => switch (rhs) {
+                    .register => .ea(9, lhs, 1),
+                    .immediate => .ea(10, lhs, 1),
+                    else => unreachable,
+                },
+                else => unreachable,
+            };
+        },
+        .@"test" => {
+            const lhs = instr.lhs.?;
+            const rhs = instr.rhs.?;
+
+            return switch (lhs) {
+                .register => |lreg| switch (rhs) {
+                    .register => .base(3),
+                    .direct_address, .effective_address_calculation => .ea(9, rhs, 1),
+                    .immediate => .base(if (lreg.type == .a) 4 else 5),
+                },
+                .direct_address, .effective_address_calculation => switch (rhs) {
+                    .immediate => .ea(11, lhs, 0),
+                    else => unreachable,
+                },
+                else => unreachable,
+            };
+        },
+        .xor => {
+            const lhs = instr.lhs.?;
+            const rhs = instr.rhs.?;
+
+            return switch (lhs) {
+                .register => switch (rhs) {
+                    .register => .base(3),
+                    .direct_address, .effective_address_calculation => .ea(9, rhs, 1),
+                    .immediate => .base(4),
+                },
+                .direct_address, .effective_address_calculation => switch (rhs) {
+                    .register => .ea(16, rhs, 2),
+                    .immediate => .ea(17, lhs, 2),
+                    else => unreachable,
+                },
+                else => unreachable,
+            };
+        },
+        .je,
+        .jl,
+        .jle,
+        .jb,
+        .jbe,
+        .jp,
+        .jo,
+        .js,
+        .jne,
+        .jnl,
+        .jg,
+        .jnb,
+        .ja,
+        .jnp,
+        .jno,
+        .jns,
+        => .base(if (jumped) 16 else 4),
         else => unreachable,
     };
 }

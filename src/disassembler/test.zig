@@ -115,6 +115,7 @@ test "exec | compare" {
         input_dir ++ "listing_0055_challenge_rectangle",
         input_dir ++ "listing_0056_estimating_cycles",
             // input_dir ++ "listing_0057_challenge_cycles",
+            // input_dir ++ "listing_0059_SingleScalar",
     };
 
     var tmp = std.testing.tmpDir(.{});
