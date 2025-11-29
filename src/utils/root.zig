@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const Args = struct {
+    program_name: []const u8,
     items: [][]const u8,
     positional: [][]const u8,
     named: std.StringHashMap(?[]const u8),
@@ -47,7 +48,7 @@ pub const Args = struct {
 
 pub fn readAllArgsAlloc(allocator: std.mem.Allocator) !Args {
     var args_it = try std.process.argsWithAllocator(allocator);
-    _ = args_it.skip(); // program name
+    const program_name = args_it.next().?; // program name
 
     var args = try std.ArrayList([]const u8).initCapacity(allocator, 5);
     var positional = try std.ArrayList([]const u8).initCapacity(allocator, 5);
@@ -67,6 +68,7 @@ pub fn readAllArgsAlloc(allocator: std.mem.Allocator) !Args {
     }
 
     return Args{
+        .program_name = program_name,
         .items = try args.toOwnedSlice(allocator),
         .positional = try positional.toOwnedSlice(allocator),
         .named = named,
