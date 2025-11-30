@@ -1,3 +1,3 @@
 {
-    "file_scan_exclusions": [".zig-cache", ".git", "zig-out"]
+    "file_scan_exclusions": [".zig-cache", ".git", "zig-out", "data_*.json", "*.f64"]
 }

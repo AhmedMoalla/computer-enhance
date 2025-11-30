@@ -120,12 +120,18 @@ fn parseNextToken(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonToken {
         },
         't' => {
             token.type = .true;
+            token.value = "true";
+            in.toss(3); // 'rue' part of true
         },
         'f' => {
             token.type = .false;
+            token.value = "false";
+            in.toss(4); // 'alse' part of false
         },
         'n' => {
             token.type = .null;
+            token.value = "null";
+            in.toss(3); // 'ull' part of null
         },
         ' ', '\n', '\r' => {
             next = try in.takeByte();
