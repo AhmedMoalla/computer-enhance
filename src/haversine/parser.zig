@@ -1,5 +1,8 @@
 const std = @import("std");
 const utils = @import("utils");
+const profiler = @import("profiler.zig");
+
+const log = std.log.scoped(.parser);
 
 const JsonField = struct {
     key: []const u8,
@@ -150,8 +153,11 @@ fn parseNextToken(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonToken {
 const JsonError = std.mem.Allocator.Error || std.io.Reader.Error || std.fmt.ParseFloatError || error{BadToken};
 
 fn parseObject(allocator: std.mem.Allocator, in: *std.io.Reader) JsonError!JsonObject {
-    std.log.debug("O>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", .{});
-    defer std.log.debug("O<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", .{});
+    profiler.timeBlock("parser.parseObject");
+    defer profiler.endTimeBlock("parser.parseObject");
+
+    log.debug("O>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", .{});
+    defer log.debug("O<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", .{});
     var fields = try std.ArrayList(JsonField).initCapacity(allocator, 10);
     var key: ?[]const u8 = null;
     while (true) {
@@ -159,7 +165,7 @@ fn parseObject(allocator: std.mem.Allocator, in: *std.io.Reader) JsonError!JsonO
             error.EndOfStream => break,
             else => return err,
         };
-        std.log.debug("Next: type={t} | value={s}\n", .{ next.type, next.value });
+        log.debug("Next: type={t} | value={s}\n", .{ next.type, next.value });
 
         switch (next.type) {
             .string => {
@@ -190,7 +196,7 @@ fn parseObject(allocator: std.mem.Allocator, in: *std.io.Reader) JsonError!JsonO
             .null => try fields.append(allocator, .{ .key = key.?, .value = .{ .null = {} } }),
             .right_brace => break,
             .right_bracket, .@"error" => {
-                std.log.err("unexpected token found: '{s}'", .{next.value});
+                log.err("unexpected token found: '{s}'", .{next.value});
                 return error.BadToken;
             },
         }
@@ -200,15 +206,15 @@ fn parseObject(allocator: std.mem.Allocator, in: *std.io.Reader) JsonError!JsonO
 }
 
 fn parseArray(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonArray {
-    std.log.debug("A>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", .{});
-    defer std.log.debug("A<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", .{});
+    log.debug("A>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", .{});
+    defer log.debug("A<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", .{});
     var items = try std.ArrayList(JsonValue).initCapacity(allocator, 10);
     while (true) {
         const next = parseNextToken(allocator, in) catch |err| switch (err) {
             error.EndOfStream => break,
             else => return err,
         };
-        std.log.debug("Next: type={t} | value={s}\n", .{ next.type, next.value });
+        log.debug("Next: type={t} | value={s}\n", .{ next.type, next.value });
 
         switch (next.type) {
             .string => try items.append(allocator, .{ .string = next.value }),
@@ -220,7 +226,7 @@ fn parseArray(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonArray {
             .comma => {},
             .right_bracket => break,
             .right_brace, .colon, .@"error" => {
-                std.log.err("unexpected token found: '{s}'", .{next.value});
+                log.err("unexpected token found: '{s}'", .{next.value});
                 return error.BadToken;
             },
         }
@@ -231,12 +237,12 @@ fn parseArray(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonArray {
 pub fn parse(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonElement {
     const next = parseNextToken(allocator, in) catch |err| switch (err) {
         error.EndOfStream => {
-            std.log.err("file ended unexpectedly", .{});
+            log.err("file ended unexpectedly", .{});
             return err;
         },
         else => return err,
     };
-    std.log.debug("Next: type={t} | value={s}\n", .{ next.type, next.value });
+    log.debug("Next: type={t} | value={s}\n", .{ next.type, next.value });
 
     return switch (next.type) {
         .left_brace => .{ .object = try parseObject(allocator, in) },
@@ -245,9 +251,12 @@ pub fn parse(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonElement {
     };
 }
 
-const HaversineInput = struct { x0: f64, y0: f64, x1: f64, y1: f64 };
+pub const HaversineInput = struct { x0: f64, y0: f64, x1: f64, y1: f64 };
 
 pub fn parseHaversineInputs(allocator: std.mem.Allocator, in: *std.io.Reader, expected_size: usize) ![]HaversineInput {
+    profiler.timeBlock("Parse");
+    defer profiler.endTimeBlock("Parse");
+
     var inputs = try std.ArrayList(HaversineInput).initCapacity(allocator, expected_size);
 
     const json = try parse(allocator, in);
@@ -267,7 +276,7 @@ pub fn parseHaversineInputs(allocator: std.mem.Allocator, in: *std.io.Reader, ex
 }
 
 fn fail(comptime format: []const u8, args: anytype) ![]HaversineInput {
-    std.log.err(format, args);
+    log.err(format, args);
     return error.JsonParseError;
 }
 
