@@ -83,12 +83,12 @@ pub fn run() !noreturn {
         const distance = haversine.reference(x0, y0, x1, y1);
         sum += sum_coef * distance;
 
-        _ = try out_answers.write(std.mem.asBytes(&distance));
+        try out_answers.writeAll(std.mem.asBytes(&distance));
     }
     try json.endArray();
     try json.endObject();
 
-    _ = try out_answers.write(std.mem.asBytes(&sum));
+    try out_answers.writeAll(std.mem.asBytes(&sum));
 
     try out.flush();
     try out_answers.flush();
