@@ -11,3 +11,7 @@ pub fn main() !void {
         try generator.run();
     }
 }
+
+test {
+    _ = @import("parser.zig");
+}

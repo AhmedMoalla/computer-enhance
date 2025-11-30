@@ -36,7 +36,7 @@ pub fn run() !noreturn {
     const answers_file = try utils.createFileWriterAlloc(allocator, "answers_{d}.f64", .{npairs});
     var out_answers = &answers_file.file_writer.interface;
 
-    const data_file = try utils.createFileWriterAlloc(allocator, "data_{d}.json", .{npairs});
+    const data_file = try utils.createFileWriterAlloc(allocator, "data_{d}_{d}.json", .{ npairs, seed });
     var out = &data_file.file_writer.interface;
     var json = std.json.Stringify{ .writer = out };
 
