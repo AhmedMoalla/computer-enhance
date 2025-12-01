@@ -153,8 +153,8 @@ fn parseNextToken(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonToken {
 const JsonError = std.mem.Allocator.Error || std.io.Reader.Error || std.fmt.ParseFloatError || error{BadToken};
 
 fn parseObject(allocator: std.mem.Allocator, in: *std.io.Reader) JsonError!JsonObject {
-    profiler.timeBlock("parser.parseObject");
-    defer profiler.endTimeBlock("parser.parseObject");
+    // profiler.timeBlock("Parse Object");
+    // defer profiler.endTimeBlock("Parse Object");
 
     log.debug("O>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", .{});
     defer log.debug("O<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", .{});
@@ -260,6 +260,8 @@ pub fn parseHaversineInputs(allocator: std.mem.Allocator, in: *std.io.Reader, ex
     var inputs = try std.ArrayList(HaversineInput).initCapacity(allocator, expected_size);
 
     const json = try parse(allocator, in);
+
+    profiler.timeBlock("Lookup and Convert");
     var pairs = json.getArray("pairs").?;
     while (pairs.next()) |pair| {
         const obj = pair.asObject() orelse return fail("expected 'pairs' to be an object but was of type '{s}'", .{@tagName(pair)});
@@ -271,6 +273,7 @@ pub fn parseHaversineInputs(allocator: std.mem.Allocator, in: *std.io.Reader, ex
             .y1 = obj.getFloat("y1") orelse return fail("expected 'y1' to be a float", .{}),
         };
     }
+    profiler.endTimeBlock("Lookup and Convert");
 
     return inputs.toOwnedSlice(allocator);
 }
