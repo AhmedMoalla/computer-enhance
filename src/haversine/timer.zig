@@ -39,7 +39,7 @@ pub fn readCPUtimer() u64 {
     return (@as(u64, high) << 32) | @as(u64, low);
 }
 
-pub fn estimateCPUtimerFreq() u64 {
+pub fn estimateCPUtimerFreq() CPUFreq {
     const ms_to_wait: u64 = 100;
     const os_freq: u64 = getOStimerFreq();
 
@@ -61,8 +61,46 @@ pub fn estimateCPUtimerFreq() u64 {
     if (os_elapsed > 0) {
         cpu_freq = os_freq * cpu_elapsed / os_elapsed;
     }
-    return cpu_freq;
+    return .{ .freq = cpu_freq };
 }
+
+pub const CPUFreq = struct {
+    freq: u64,
+
+    // adapted from std.Io.Writer.printByteSize
+    pub fn format(self: @This(), w: *std.Io.Writer) std.Io.Writer.Error!void {
+        const value = self.freq;
+        if (value == 0) return w.alignBufferOptions("0Hz", .{});
+        // The worst case in terms of space needed is 32 bytes + 3 for the suffix.
+        var buf: [std.fmt.float.min_buffer_size + 3]u8 = undefined;
+
+        const mags_si = " kMGTPEZY";
+
+        const log2 = std.math.log2(value);
+        const magnitude = @min(log2 / comptime std.math.log2(1000), mags_si.len - 1);
+        const new_value = std.math.lossyCast(f64, value) / std.math.pow(f64, std.math.lossyCast(f64, 1000), std.math.lossyCast(f64, magnitude));
+        const suffix = mags_si[magnitude];
+
+        const s = switch (magnitude) {
+            0 => buf[0..std.fmt.printInt(&buf, value, 10, .lower, .{})],
+            else => std.fmt.float.render(&buf, new_value, .{ .mode = .decimal, .precision = 2 }) catch |err| switch (err) {
+                error.BufferTooSmall => unreachable,
+            },
+        };
+
+        var i: usize = s.len;
+        if (suffix == ' ') {
+            buf[i] = 'H';
+            buf[i + 1] = 'z';
+            i += 2;
+        } else {
+            buf[i..][0..3].* = [_]u8{ suffix, 'H', 'z' };
+            i += 3;
+        }
+
+        return w.alignBufferOptions(buf[0..i], .{});
+    }
+};
 
 test "listing_0071_os_timer_main.cpp port" {
     std.testing.log_level = .debug;

@@ -153,8 +153,8 @@ fn parseNextToken(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonToken {
 const JsonError = std.mem.Allocator.Error || std.io.Reader.Error || std.fmt.ParseFloatError || error{BadToken};
 
 fn parseObject(allocator: std.mem.Allocator, in: *std.io.Reader) JsonError!JsonObject {
-    // profiler.timeBlock("Parse Object");
-    // defer profiler.endTimeBlock("Parse Object");
+    profiler.timeBlock("Parse Object");
+    defer profiler.endTimeBlock("Parse Object");
 
     log.debug("O>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", .{});
     defer log.debug("O<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", .{});
@@ -254,26 +254,29 @@ pub fn parse(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonElement {
 pub const HaversineInput = struct { x0: f64, y0: f64, x1: f64, y1: f64 };
 
 pub fn parseHaversineInputs(allocator: std.mem.Allocator, in: *std.io.Reader, expected_size: usize) ![]HaversineInput {
-    profiler.timeBlock("Parse");
-    defer profiler.endTimeBlock("Parse");
+    profiler.timeBlock("Parsing");
+    defer profiler.endTimeBlock("Parsing");
 
     var inputs = try std.ArrayList(HaversineInput).initCapacity(allocator, expected_size);
-
+    profiler.timeBlock("JSON");
     const json = try parse(allocator, in);
+    profiler.endTimeBlock("JSON");
 
-    profiler.timeBlock("Lookup and Convert");
+    profiler.timeBlock("Lookup");
     var pairs = json.getArray("pairs").?;
     while (pairs.next()) |pair| {
         const obj = pair.asObject() orelse return fail("expected 'pairs' to be an object but was of type '{s}'", .{@tagName(pair)});
         const input = try inputs.addOne(allocator);
+        profiler.timeBlock("LookupLoop");
         input.* = .{
             .x0 = obj.getFloat("x0") orelse return fail("expected 'x0' to be a float", .{}),
             .y0 = obj.getFloat("y0") orelse return fail("expected 'y0' to be a float", .{}),
             .x1 = obj.getFloat("x1") orelse return fail("expected 'x1' to be a float", .{}),
             .y1 = obj.getFloat("y1") orelse return fail("expected 'y1' to be a float", .{}),
         };
+        profiler.endTimeBlock("LookupLoop");
     }
-    profiler.endTimeBlock("Lookup and Convert");
+    profiler.endTimeBlock("Lookup");
 
     return inputs.toOwnedSlice(allocator);
 }
