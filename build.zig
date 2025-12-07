@@ -28,6 +28,15 @@ pub fn build(b: *std.Build) !void {
             }),
         });
 
+        if (std.mem.eql(u8, dir.name, "haversine")) {
+            const enable_profiling = b.option(bool, "profiling", "Enable profiling") orelse false;
+
+            const options = b.addOptions();
+            options.addOption(bool, "enable_profiling", enable_profiling);
+
+            exe.root_module.addOptions("config", options);
+        }
+
         b.installArtifact(exe);
 
         const run_step = b.step(dir.name, try std.fmt.allocPrint(b.allocator, "Run {s}", .{dir.name}));

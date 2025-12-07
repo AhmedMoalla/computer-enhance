@@ -1,4 +1,5 @@
 const std = @import("std");
+const config = @import("config");
 const utils = @import("utils");
 const timer = @import("timer.zig");
 
@@ -29,6 +30,13 @@ blocks: std.StringArrayHashMap(ProfilerBlock) = undefined,
 stack: std.ArrayList([]const u8) = undefined,
 
 pub fn begin(allocator: std.mem.Allocator) void {
+    if (!config.enable_profiling) {
+        global.initialized = true;
+        global.cpu_freq = timer.estimateCPUtimerFreq();
+        global.start_tsc = timer.readCPUtimer();
+        return;
+    }
+
     global.initialized = true;
     global.allocator = allocator;
     global.cpu_freq = timer.estimateCPUtimerFreq();
@@ -44,7 +52,10 @@ pub fn endAndPrint() void {
     global.end_tsc = end;
 
     const total_cpu_elapsed: u64 = global.end_tsc - global.start_tsc;
-    const total_time: u64 = (total_cpu_elapsed * std.time.ns_per_s) / global.cpu_freq.freq;
+    const ftotal_cpu_elapsed: f64 = @floatFromInt(total_cpu_elapsed);
+    const fcpu_freq: f64 = @floatFromInt(global.cpu_freq.freq);
+    const fns_per_s: f64 = @floatFromInt(std.time.ns_per_s);
+    const total_time: u64 = @intFromFloat(ftotal_cpu_elapsed / (fcpu_freq / fns_per_s));
 
     log.info("Total time: {D} ({d} cycles @ {f})", .{
         total_time,
@@ -52,13 +63,17 @@ pub fn endAndPrint() void {
         global.cpu_freq,
     });
 
-    var it = global.blocks.iterator();
-    while (it.next()) |block| {
-        printBlock(block.value_ptr.*, total_cpu_elapsed);
+    if (config.enable_profiling) {
+        var it = global.blocks.iterator();
+        while (it.next()) |block| {
+            printBlock(block.value_ptr.*, total_cpu_elapsed);
+        }
     }
 }
 
 pub fn timeBlock(label: []const u8) void {
+    if (!config.enable_profiling) return;
+
     const start = timer.readCPUtimer();
     checkInitialized();
 
@@ -87,6 +102,8 @@ pub fn timeBlock(label: []const u8) void {
 }
 
 pub fn endTimeBlock(label: []const u8) void {
+    if (!config.enable_profiling) return;
+
     const end = timer.readCPUtimer();
     checkInitialized();
 
@@ -119,7 +136,10 @@ fn printBlockRec(block: ProfilerBlock, total_cpu_elapsed: u64, depth_counter: u6
     const padding = utils.repeatCharAlloc(global.allocator, "    ", depth_counter);
 
     const cpu_elapsed: u64 = block.end_tsc - block.start_tsc;
-    const block_time: u64 = (cpu_elapsed * std.time.ns_per_s) / global.cpu_freq.freq;
+    const fcpu_elapsed: f64 = @floatFromInt(cpu_elapsed);
+    const fcpu_freq: f64 = @floatFromInt(global.cpu_freq.freq);
+    const fns_per_s: f64 = @floatFromInt(std.time.ns_per_s);
+    const block_time: u64 = @intFromFloat(fcpu_elapsed / (fcpu_freq / fns_per_s));
 
     const percent: f64 = @as(f64, 100.0) * @as(f64, @floatFromInt(cpu_elapsed)) / @as(f64, @floatFromInt(total_cpu_elapsed));
     log.info("  {s}[{d:>6.2}%] {s:<15}[{d}] {D:>9.3} ({d} cycles)", .{
