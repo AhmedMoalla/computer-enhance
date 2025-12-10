@@ -17,7 +17,7 @@ pub fn main() !void {
     const allocator = arena.allocator();
     profiler.begin(allocator);
 
-    profiler.timeBlock("Setup");
+    const setup = profiler.timeBlock("Setup");
     const args = try utils.readAllArgsAlloc(allocator);
     if (args.has("generator")) {
         try generator.run();
@@ -30,13 +30,13 @@ pub fn main() !void {
 
     const inputs_file = try utils.openFileReaderAlloc(allocator, args.pos(0).?);
     const answers = try utils.openFileReaderAlloc(allocator, args.pos(1).?);
-    profiler.endTimeBlock("Setup");
+    setup.endTimeBlock();
 
     const inputs = try parser.parseHaversineInputs(allocator, inputs_file.interface, 10000);
     const sum: f64 = sumHaversines(inputs);
     const ref_sum: f64 = try validateHaversineSums(inputs, answers);
 
-    profiler.timeBlock("Output");
+    const output = profiler.timeBlock("Output");
     const stats = try inputs_file.file.stat();
     std.log.info("Input size: {d}", .{stats.size});
     std.log.info("Pair count: {d}", .{inputs.len});
@@ -44,14 +44,14 @@ pub fn main() !void {
     std.log.info("Validation:", .{});
     std.log.info("Reference sum: {d}", .{ref_sum});
     std.log.info("Difference: {d}\n", .{@abs(ref_sum - sum)});
-    profiler.endTimeBlock("Output");
+    output.endTimeBlock();
 
     profiler.endAndPrint();
 }
 
 fn sumHaversines(inputs: []parser.HaversineInput) f64 {
-    profiler.timeBlock("Sum");
-    defer profiler.endTimeBlock("Sum");
+    const block = profiler.timeBlock("Sum");
+    defer block.endTimeBlock();
 
     var sum: f64 = 0;
     const sum_coef = 1.0 / @as(f64, @floatFromInt(inputs.len));
@@ -62,8 +62,8 @@ fn sumHaversines(inputs: []parser.HaversineInput) f64 {
 }
 
 fn validateHaversineSums(inputs: []parser.HaversineInput, answers: utils.FileReader) !f64 {
-    profiler.timeBlock("Validation");
-    defer profiler.endTimeBlock("Validation");
+    const block = profiler.timeBlock("Validation");
+    defer block.endTimeBlock();
 
     const answers_stats = try answers.file.stat();
     const count: u64 = answers_stats.size / @sizeOf(f64) - 1;

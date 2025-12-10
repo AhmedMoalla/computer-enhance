@@ -17,8 +17,6 @@ const JsonValue = union(enum) {
     null: void,
 
     pub fn asObject(self: JsonValue) ?JsonObject {
-        profiler.timeBlock("asObject");
-        defer profiler.endTimeBlock("asObject");
         return switch (self) {
             .object => self.object,
             inline else => null,
@@ -29,8 +27,6 @@ const JsonObject = struct {
     fields: []JsonField,
 
     pub fn getFloat(self: JsonObject, key: []const u8) ?f64 {
-        profiler.timeBlock("getFloat");
-        defer profiler.endTimeBlock("getFloat");
         return for (self.fields) |field| {
             if (std.mem.eql(u8, key, field.key)) {
                 break field.value.number;
@@ -55,8 +51,6 @@ pub const JsonElement = union(enum) {
     array: JsonArray,
 
     pub fn getArray(self: JsonElement, key: []const u8) ?JsonArray {
-        profiler.timeBlock("getArray");
-        defer profiler.endTimeBlock("getArray");
         return switch (self) {
             .object => for (self.object.fields) |field| {
                 if (std.mem.eql(u8, key, field.key)) {
@@ -89,9 +83,6 @@ const JsonToken = struct {
 };
 
 fn parseNextToken(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonToken {
-    profiler.timeBlock("parseNextToken");
-    defer profiler.endTimeBlock("parseNextToken");
-
     var next = try in.takeByte();
     var value = try allocator.alloc(u8, 1);
     value[0] = next;
@@ -106,8 +97,6 @@ fn parseNextToken(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonToken {
         ',' => token.type = .comma,
         ':' => token.type = .colon,
         '"' => {
-            // profiler.timeBlock("parseString");
-            // defer profiler.endTimeBlock("parseString");
             token.type = .string;
             var string_value = try std.ArrayList(u8).initCapacity(allocator, 20);
             var char = try in.takeByte();
@@ -118,8 +107,6 @@ fn parseNextToken(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonToken {
             token.value = try string_value.toOwnedSlice(allocator);
         },
         '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' => {
-            // profiler.timeBlock("parseNumber");
-            // defer profiler.endTimeBlock("parseNumber");
             token.type = .number;
             var number_value = try std.ArrayList(u8).initCapacity(allocator, 20);
             try number_value.append(allocator, next);
@@ -166,8 +153,8 @@ fn parseNextToken(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonToken {
 const JsonError = std.mem.Allocator.Error || std.io.Reader.Error || std.fmt.ParseFloatError || error{BadToken};
 
 fn parseObject(allocator: std.mem.Allocator, in: *std.io.Reader) JsonError!JsonObject {
-    profiler.timeBlock("parseObject");
-    defer profiler.endTimeBlock("parseObject");
+    const block = profiler.timeBlock("parseObject");
+    defer block.endTimeBlock();
 
     log.debug("O>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", .{});
     defer log.debug("O<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", .{});
@@ -219,8 +206,6 @@ fn parseObject(allocator: std.mem.Allocator, in: *std.io.Reader) JsonError!JsonO
 }
 
 fn parseArray(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonArray {
-    // profiler.timeBlock("parseArray");
-    // defer profiler.endTimeBlock("parseArray");
     log.debug("A>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", .{});
     defer log.debug("A<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", .{});
     var items = try std.ArrayList(JsonValue).initCapacity(allocator, 10);
@@ -269,29 +254,27 @@ pub fn parse(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonElement {
 pub const HaversineInput = struct { x0: f64, y0: f64, x1: f64, y1: f64 };
 
 pub fn parseHaversineInputs(allocator: std.mem.Allocator, in: *std.io.Reader, expected_size: usize) ![]HaversineInput {
-    profiler.timeBlock("Parsing");
-    defer profiler.endTimeBlock("Parsing");
+    const block = profiler.timeBlock("Parsing");
+    defer block.endTimeBlock();
 
     var inputs = try std.ArrayList(HaversineInput).initCapacity(allocator, expected_size);
-    profiler.timeBlock("JSON");
+    const json_block = profiler.timeBlock("JSON");
     const json = try parse(allocator, in);
-    profiler.endTimeBlock("JSON");
+    json_block.endTimeBlock();
 
-    profiler.timeBlock("Lookup");
+    const lookup_block = profiler.timeBlock("Lookup");
     var pairs = json.getArray("pairs").?;
     while (pairs.next()) |pair| {
         const obj = pair.asObject() orelse return fail("expected 'pairs' to be an object but was of type '{s}'", .{@tagName(pair)});
         const input = try inputs.addOne(allocator);
-        profiler.timeBlock("LookupLoop");
         input.* = .{
             .x0 = obj.getFloat("x0") orelse return fail("expected 'x0' to be a float", .{}),
             .y0 = obj.getFloat("y0") orelse return fail("expected 'y0' to be a float", .{}),
             .x1 = obj.getFloat("x1") orelse return fail("expected 'x1' to be a float", .{}),
             .y1 = obj.getFloat("y1") orelse return fail("expected 'y1' to be a float", .{}),
         };
-        profiler.endTimeBlock("LookupLoop");
     }
-    profiler.endTimeBlock("Lookup");
+    lookup_block.endTimeBlock();
 
     return inputs.toOwnedSlice(allocator);
 }
