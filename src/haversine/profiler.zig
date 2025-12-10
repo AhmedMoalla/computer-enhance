@@ -36,6 +36,8 @@ pub const ProfilerBlock = struct {
     }
 };
 
+pub var default_zone_count: usize = 64;
+
 const global_parent_label = "Global";
 
 var global = Profiler{};
@@ -47,6 +49,7 @@ zones: std.StringArrayHashMap(ProfilerZone) = undefined,
 
 pub fn begin(allocator: std.mem.Allocator) void {
     global.zones = std.StringArrayHashMap(ProfilerZone).init(allocator);
+    global.zones.ensureTotalCapacity(default_zone_count) catch unreachable;
     global.zones.put(global_parent_label, .{
         .label = global_parent_label,
         .start_tsc = 0,
