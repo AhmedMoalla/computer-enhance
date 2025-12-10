@@ -83,6 +83,8 @@ const JsonToken = struct {
 };
 
 fn parseNextToken(allocator: std.mem.Allocator, in: *std.io.Reader) !JsonToken {
+    const block = profiler.timeBlock("parseNextToken");
+    defer block.endTimeBlock();
     var next = try in.takeByte();
     var value = try allocator.alloc(u8, 1);
     value[0] = next;

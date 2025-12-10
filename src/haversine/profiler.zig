@@ -4,6 +4,7 @@ const utils = @import("utils");
 const timer = @import("timer.zig");
 
 const log = std.log.scoped(.profiler);
+const StringSet = std.StringArrayHashMap(void);
 
 const Profiler = @This();
 
@@ -33,6 +34,8 @@ pub const ProfilerBlock = struct {
         parent_label = self.previous_parent;
         var parent = global.zones.getPtr(parent_label).?;
         parent.children_time += block_duration;
+        var children = global.tree.getPtr(parent_label).?;
+        children.put(self.label, {}) catch unreachable;
     }
 };
 
@@ -43,17 +46,26 @@ const global_parent_label = "Global";
 var global = Profiler{};
 var parent_label: []const u8 = global_parent_label;
 
+allocator: std.mem.Allocator = undefined,
+
 start_tsc: u64 = undefined,
 end_tsc: u64 = undefined,
 zones: std.StringArrayHashMap(ProfilerZone) = undefined,
+tree: std.StringArrayHashMap(StringSet) = undefined, // Used for final hierarchical display
 
 pub fn begin(allocator: std.mem.Allocator) void {
+    global.allocator = allocator;
     global.zones = std.StringArrayHashMap(ProfilerZone).init(allocator);
     global.zones.ensureTotalCapacity(default_zone_count) catch unreachable;
     global.zones.put(global_parent_label, .{
         .label = global_parent_label,
         .start_tsc = 0,
     }) catch unreachable;
+    global.tree = std.StringArrayHashMap(StringSet).init(allocator);
+    global.tree.ensureTotalCapacity(default_zone_count) catch unreachable;
+    var children = StringSet.init(allocator);
+    children.ensureTotalCapacity(default_zone_count / 2) catch unreachable;
+    global.tree.put(global_parent_label, children) catch unreachable;
     global.start_tsc = timer.readCPUtimer();
 }
 
@@ -70,8 +82,17 @@ pub fn endAndPrint() void {
     });
 
     if (config.enable_profiling) {
-        var it = global.zones.iterator();
-        while (it.next()) |zone| {
+        var it = global.tree.iterator();
+        while (it.next()) |entry| {
+            std.debug.print("{s} -> ", .{entry.key_ptr.*});
+            var children_it = entry.value_ptr.*.iterator();
+            while (children_it.next()) |child| {
+                std.debug.print("{s}, ", .{child.key_ptr.*});
+            }
+            std.debug.print("\n", .{});
+        }
+        var it2 = global.zones.iterator();
+        while (it2.next()) |zone| {
             if (std.mem.eql(u8, global_parent_label, zone.value_ptr.label)) continue;
             printZone(zone.value_ptr.*, total_cpu_elapsed);
         }
@@ -89,6 +110,10 @@ pub fn timeBlock(label: []const u8) ProfilerBlock {
             .start_tsc = start_tsc,
         };
     }
+
+    var children = StringSet.init(global.allocator);
+    children.ensureTotalCapacity(default_zone_count / 2) catch unreachable;
+    global.tree.put(label, children) catch unreachable;
 
     defer parent_label = label;
 
