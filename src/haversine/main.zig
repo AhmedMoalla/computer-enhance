@@ -50,7 +50,7 @@ pub fn main() !void {
 }
 
 fn sumHaversines(inputs: []parser.HaversineInput) f64 {
-    const block = profiler.timeBlock("Sum");
+    const block = profiler.timeBlockBandwidth("Sum", @sizeOf(parser.HaversineInput) * inputs.len);
     defer block.endTimeBlock();
 
     var sum: f64 = 0;
@@ -62,7 +62,7 @@ fn sumHaversines(inputs: []parser.HaversineInput) f64 {
 }
 
 fn validateHaversineSums(inputs: []parser.HaversineInput, answers: utils.FileReader) !f64 {
-    const block = profiler.timeBlock("Validation");
+    const block = profiler.timeBlockBandwidth("Validation", @sizeOf(parser.HaversineInput) * inputs.len);
     defer block.endTimeBlock();
 
     const answers_stats = try answers.file.stat();
@@ -71,6 +71,7 @@ fn validateHaversineSums(inputs: []parser.HaversineInput, answers: utils.FileRea
         std.log.err("expected {d} sums but found {d}", .{ inputs.len, count });
         std.process.exit(1);
     }
+    block.addNBytes(answers_stats.size);
 
     var ref_sum: f64 = 0;
     while (true) {

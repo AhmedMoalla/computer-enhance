@@ -14,6 +14,7 @@ const ProfilerZone = struct {
     duration: u64 = 0,
     children_time: u64 = 0,
     hit_count: u64 = 0,
+    nbytes: u64 = 0,
 };
 
 pub const ProfilerBlock = struct {
@@ -33,6 +34,11 @@ pub const ProfilerBlock = struct {
         parent_label = self.previous_parent;
         var parent = global.zones.getPtr(parent_label).?;
         parent.children_time += block_duration;
+    }
+
+    pub fn addNBytes(self: ProfilerBlock, nbytes: u64) void {
+        var zone = global.zones.getPtr(self.label).?;
+        zone.nbytes += nbytes;
     }
 };
 
@@ -79,6 +85,10 @@ pub fn endAndPrint() void {
 }
 
 pub fn timeBlock(label: []const u8) ProfilerBlock {
+    return timeBlockBandwidth(label, 0);
+}
+
+pub fn timeBlockBandwidth(label: []const u8, nbytes: usize) ProfilerBlock {
     if (!config.enable_profiling) return .{ .label = label, .start_tsc = 0 };
     const start_tsc = timer.readCPUtimer();
 
@@ -89,6 +99,7 @@ pub fn timeBlock(label: []const u8) ProfilerBlock {
             .start_tsc = start_tsc,
         };
     }
+    result.value_ptr.nbytes += nbytes;
 
     defer parent_label = label;
 
@@ -105,24 +116,31 @@ fn printZone(zone: ProfilerZone, total_cpu_elapsed: u64) void {
     const time_inclusive, const percent_inclusive = calcTimeAndPercent(duration_inclusive, total_cpu_elapsed);
     const time_exclusive, const percent_exclusive = calcTimeAndPercent(duration_exclusive, total_cpu_elapsed);
 
-    if (zone.children_time > 0 and percent_inclusive != percent_exclusive) {
-        log.info("  [{d:>5.2}%] {s:<15}[{d}] {D:>9.3} ({d} cycles) [{d:>5.2}% w/children]", .{
-            percent_exclusive,
-            zone.label,
-            zone.hit_count,
-            time_exclusive,
-            zone.duration - zone.children_time,
-            percent_inclusive,
-        });
-    } else {
-        log.info("  [{d:>5.2}%] {s:<15}[{d}] {D:>9.3} ({d} cycles)", .{
-            percent_inclusive,
-            zone.label,
-            zone.hit_count,
-            time_inclusive,
-            zone.end_tsc - zone.start_tsc,
-        });
+    const has_children = zone.children_time > 0 and percent_inclusive != percent_exclusive;
+    const percent = if (has_children) percent_exclusive else percent_inclusive;
+    const time = if (has_children) time_exclusive else time_inclusive;
+    const duration = if (has_children) duration_exclusive else duration_inclusive;
+
+    var buffer: [1024]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    writer.print("  [{d:>5.2}%] {s:<15}[{d}] {D:>9.3} ({d} cycles)", .{
+        percent,
+        zone.label,
+        zone.hit_count,
+        time,
+        duration,
+    }) catch unreachable;
+
+    if (has_children) {
+        writer.print(" [{d:>5.2}% w/children]", .{percent_inclusive}) catch unreachable;
     }
+
+    if (zone.nbytes > 0) {
+        writer.print(" {B:.2} at {d:.2}GB/s", .{ zone.nbytes, @as(f64, @floatFromInt(zone.nbytes)) / @as(f64, @floatFromInt(time)) }) catch unreachable;
+    }
+
+    writer.flush() catch unreachable;
+    log.info("{s}", .{writer.buffered()});
 }
 
 fn calcTimeAndPercent(duration: u64, total_cpu_elapsed: u64) struct { u64, f64 } {
